@@ -1,0 +1,20 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# Data
+data/raw/
+data/processed/
+
+# Results
+results/
+
+# Seurat objects
+*.rds
+*.rda
+
+# macOS
+.DS_Store
+
+
