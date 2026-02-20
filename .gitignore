@@ -4,8 +4,11 @@
 .Rproj.user/
 
 # Data
-data/raw/
-data/processed/
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
 
 # Results
 results/
