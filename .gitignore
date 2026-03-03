@@ -1,3 +1,4 @@
+
 # R
 .Rhistory
 .RData
@@ -6,9 +7,10 @@
 # Data
 data/raw/*
 data/processed/*
+data/sc_reference/raw/
+data/sc_reference/processed/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-
 
 # Results
 results/
@@ -19,5 +21,3 @@ results/
 
 # macOS
 .DS_Store
-
-
