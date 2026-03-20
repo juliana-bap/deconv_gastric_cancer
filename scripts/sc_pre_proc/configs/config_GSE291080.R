@@ -1,14 +1,16 @@
 # ==============================
-# CONFIG - GSE246662
+# CONFIG - GSE291080
 # Project: Gastric Cancer Deconvolution
 # Source: GEO
-# Technology: 10x
+# Technology: 10x Genomics
 # Reference genome: GRCh38
-# Notes: Some matrices were originally transposed
+# Format: 10x (barcodes/features/matrix per sample dir)
+# Gene IDs: Ensembl (from features.tsv column 1)
+# Samples: 44 (1 excluded: GSM8828843_a187_es - barcode/matrix mismatch)
 # ==============================
 
 # ---- Dataset identity ----
-dataset_id <- "GSE246662"
+dataset_id <- "GSE291080"
 
 # ---- Project root ----
 project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
@@ -37,6 +39,9 @@ mapping_table_path <- file.path(annotation_dir, "ensembl109_full_mapping.rds")
 
 # ---- Utils / Functions ----
 utils_path <- file.path(project_root, "scripts", "sc_pre_proc", "pipeline", "00_utils_general.R")
+
+# ---- Samples to exclude at import (data integrity issues) ----
+samples_to_exclude_import <- c("GSM8828843_a187_es")  # barcode/matrix mismatch in GEO
 
 # ---- Metadata ----
 metadata_dir <- file.path(project_root, "data", "sc_reference", "metadata")

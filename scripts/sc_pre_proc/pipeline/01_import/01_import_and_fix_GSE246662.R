@@ -1,68 +1,86 @@
+#!/usr/bin/env Rscript
+
 # ==============================
-# SCRIPT: import_GSE246662.R
+# SCRIPT: 01_import_and_fix_GSE246662.R
 # Project: Gastric Cancer Deconvolution
 # Phase: sc_pre_proc
 # Dataset: GSE246662
-# Description: Import, orientation fix and gene symbol to Ensembl conversion
-# Input: data/sc_reference/raw/GSE246662/
-# Output: data/sc_reference/raw/GSE246662/GSE246662_FIXED/
+# Description: Import CSV matrices, fix orientation, convert gene symbols
+#              to Ensembl IDs, save as sparse RDS, and download GEO metadata
+# Input: data/sc_reference/raw/GSE246662/*.csv.gz
+# Output: data/sc_reference/raw/GSE246662/GSE246662_FIXED/*.rds
+#         data/sc_reference/metadata/metadata_GSE246662.rds
+# Usage: Rscript 01_import_and_fix_GSE246662.R <config_path>
 # Author: Juliana Pinto
 # Date: 23-02-2026
 # Ensembl version: 109 (GRCh38)
 # ==============================
 
-# Packages
+# ---- Load config ----
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) == 0) {
+  stop("Usage: Rscript 01_import_and_fix_GSE246662.R <config_path>\n  No config file provided.")
+}
+if (!file.exists(args[1])) {
+  stop("Config file not found: ", args[1])
+}
 
-library(biomaRt)
+config_path <- normalizePath(args[1])
+source(config_path)
 
-# Files
+# ---- Load functions ----
+source(utils_path)
 
-csvs <- c(
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874169_HL1.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874170_HL2.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874171_HL3.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874172_GC1.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874173_GC2.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874174_GC3.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874175_LM1.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874176_LM2.csv.gz",
-  "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSM7874177_LM3.csv.gz"
-)
+# ---- Libraries ----
+library(Matrix)
+library(GEOquery)
 
-# Functions
+# ---- Mapping table ----
+mapping_table <- readRDS(mapping_table_path)
 
-source("/Users/julianapinto/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/pipeline/00_utils_general.R")
+# ---- Input files ----
+csvs <- list.files(raw_base_dir, pattern = "\\.csv\\.gz$", full.names = TRUE)
 
-mapping_table <- readRDS("annotation/ensembl109_full_mapping.rds")
+cat("\n=============================\n")
+cat("Dataset:", dataset_id, "\n")
+cat("Number of files found:", length(csvs), "\n")
 
-# Output directory
+# ---- Output directory ----
+dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
 
-outdir <- "/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE246662/GSE246662_FIXED"
-dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-
-# Main loop
-
+# ---- Import and fix count matrices ----
 for (path in csvs) {
-  
+
   cat("\n=============================\n")
   cat("Sample:", basename(path), "\n")
-  
+
   df <- read.csv(path, row.names = 1, check.names = FALSE)
-  
-  # Fix orientation
+
+  # Fix orientation (genes in rows, cells in columns)
   df <- fix_orientation(df)
   cat("Dimension after orientation:", dim(df), "\n")
-  
-  # Convert to Ensembl
+
+  # Convert gene symbols to Ensembl IDs
   df <- convert_to_ensembl(df, mapping_table)
-  
   cat("Final dimension (Ensembl):", dim(df), "\n")
-  
-  # Save counts
-  outfile <- file.path(outdir, basename(path))
-  write.csv(df, gzfile(outfile))
-  
+
+  # Save as sparse RDS
+  outfile <- file.path(input_dir, sub("\\.csv\\.gz$", ".rds", basename(path)))
+  saveRDS(df, outfile)
+  cat("Saved:", outfile, "\n")
+
   rm(df)
   gc()
 }
 
+# ---- Download GEO metadata ----
+cat("\n=============================\n")
+cat("Downloading GEO metadata for", dataset_id, "...\n")
+
+dir.create(metadata_dir, recursive = TRUE, showWarnings = FALSE)
+
+gse <- getGEO(dataset_id, GSEMatrix = TRUE, getGPL = FALSE)
+metadata <- pData(gse[[1]])
+
+saveRDS(metadata, metadata_path)
+cat("Metadata saved:", metadata_path, "\n")

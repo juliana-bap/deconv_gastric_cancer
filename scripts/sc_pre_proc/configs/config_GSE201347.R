@@ -1,16 +1,19 @@
 # ==============================
-# CONFIG - GSE246662
+# CONFIG - GSE201347 (PLACEHOLDER)
 # Project: Gastric Cancer Deconvolution
 # Source: GEO
-# Technology: 10x
+# Technology: 10x Genomics
 # Reference genome: GRCh38
-# Notes: Some matrices were originally transposed
+# Format: RDS (pre-built integrated Seurat object, ~18GB)
+# Note: This dataset will be processed on the server due to memory requirements.
+#       Script 01 has not been created yet.
 # ==============================
 
 # ---- Dataset identity ----
-dataset_id <- "GSE246662"
+dataset_id <- "GSE201347"
 
 # ---- Project root ----
+# TODO: Update to server path when running on the server
 project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
 
 # ---- Base directories ----

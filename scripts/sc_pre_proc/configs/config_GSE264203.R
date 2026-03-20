@@ -1,14 +1,16 @@
 # ==============================
-# CONFIG - GSE246662
+# CONFIG - GSE264203
 # Project: Gastric Cancer Deconvolution
 # Source: GEO
-# Technology: 10x
+# Technology: 10x Genomics
 # Reference genome: GRCh38
-# Notes: Some matrices were originally transposed
+# Format: HDF5 (.h5) - single file
+# Gene IDs: Symbols (converted to Ensembl in script 01)
+# Samples: 1 (single H5 file, not split by sample)
 # ==============================
 
 # ---- Dataset identity ----
-dataset_id <- "GSE246662"
+dataset_id <- "GSE264203"
 
 # ---- Project root ----
 project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
