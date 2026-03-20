@@ -52,3 +52,14 @@ run_doublet_detection <- TRUE
 mito_pattern <- "^MT-"
 ribo_pattern <- "^RP[SL]"
 hb_pattern   <- "^HB[ABDEG]"
+
+# ---- QC filtering output ----
+seurat_qc_filtered_dir <- file.path(processed_base_dir, "seurat_qc_filtered")
+
+# ---- QC thresholds ----
+qc_min_features <- 200
+qc_max_features <- 7000
+qc_min_counts   <- 1000
+qc_max_percent_mt <- 20
+remove_doublets <- TRUE
+

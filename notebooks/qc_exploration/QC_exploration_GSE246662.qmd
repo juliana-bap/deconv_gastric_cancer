@@ -1,0 +1,382 @@
+---
+title: "QC_exploration_GSE246662"
+author: "Juliana Pinto"
+format: html
+editor: visual
+---
+
+## GSE246662
+
+## Loading packages
+
+```{r}
+library(Seurat)
+library(ggplot2)
+
+
+```
+
+Config path and .rds path
+
+```{r}
+#source("~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs/config_GSE246662.R")
+
+qc_dir <- file.path(
+  project_root,
+  "data",
+  "sc_reference",
+  "processed",
+  "GSE246662",
+  "seurat_qc_metrics"
+)
+```
+
+Vector with path to files
+
+```{r}
+qc_files <- list.files(
+
+  qc_dir,
+
+  pattern = "_seurat_qc_metrics.rds$",
+
+  full.names = TRUE
+
+)
+```
+
+Create a list with sample names
+
+```{r}
+sample_names <- gsub("_seurat_qc_metrics.rds", "", basename(qc_files))
+
+seu_list <- setNames(
+  lapply(qc_files, readRDS),
+  sample_names
+)
+```
+
+Seurat objects "names"(samples in the dataset)
+
+```{r}
+names(seu_list)
+```
+
+Number of cells per sample
+
+```{r}
+sapply(seu_list, ncol)
+```
+
+```{r}
+sapply(seu_list, function(x) mean(x$nFeature_RNA))
+```
+
+Plots
+
+```{r}
+for (s in names(seu_list)) {
+  
+  cat("##", s, "\n")
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    VlnPlot(
+      seu,
+      features = c("nFeature_RNA", "nCount_RNA"),
+      pt.size = 0
+    )
+  )
+}
+```
+
+Percentage plots
+
+```{r}
+for (s in names(seu_list)) {
+  
+  cat("##", s, "\n")
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    VlnPlot(
+      seu,
+      features = c("percent.mt", "percent.ribo", "percent.hb"),
+      pt.size = 0
+    )
+  )
+}
+
+```
+
+Histograms
+
+```{r}
+library(ggplot2)
+
+for (s in names(seu_list)) {
+  
+  cat("##", s, "\n")
+  
+  seu <- seu_list[[s]]
+  
+  df <- seu@meta.data
+  
+  p1 <- ggplot(df, aes(x = nFeature_RNA)) +
+    geom_histogram(bins = 50) +
+    ggtitle(paste("nFeature_RNA -", s))
+  
+  print(p1)
+  
+  p2 <- ggplot(df, aes(x = percent.mt)) +
+    geom_histogram(bins = 50) +
+    ggtitle(paste("percent.mt -", s))
+  
+  print(p2)
+}
+```
+
+a
+
+```{r}
+for (s in names(seu_list)) {
+  
+  cat("##", s, "\n")
+  
+  seu <- seu_list[[s]]
+  df  <- seu@meta.data
+  
+  cutoff <- quantile(df$percent.mt, 0.99)
+  
+  p <- ggplot(df, aes(x = percent.mt)) +
+    geom_density() +
+    geom_vline(xintercept = cutoff, linetype = "dashed") +
+    ggtitle(paste("percent.mt density -", s)) +
+    theme_classic()
+  
+  print(p)
+}
+```
+
+scatter
+
+```{r}
+ for (s in names(seu_list)) {
+  
+  cat("##", s, "\n")
+  
+  seu <- seu_list[[s]]
+  df  <- seu@meta.data
+  
+  # -----------------------------
+  # nCount_RNA vs percent.mt
+  # -----------------------------
+  
+  p1 <- ggplot(df, aes(x = nCount_RNA, y = percent.mt)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    ggtitle(paste("nCount_RNA vs percent.mt -", s)) +
+    theme_classic()
+  
+  print(p1)
+  
+  # --------------------------------
+  # nCount_RNA vs nFeature_RNA
+  # --------------------------------
+  
+  p2 <- ggplot(df, aes(x = nCount_RNA, y = nFeature_RNA)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    ggtitle(paste("nCount_RNA vs nFeature_RNA -", s)) +
+    theme_classic()
+  
+  print(p2)
+}
+```
+
+```{r}
+table(seu$scDblFinder.class)
+```
+
+Doublets per sample
+
+```{r}
+for (s in names(seu_list)) {
+  
+  cat("\n====================\n")
+  cat("Sample:", s, "\n")
+  cat("====================\n")
+  
+  seu <- seu_list[[s]]
+  
+  print(table(seu$scDblFinder.class))
+  
+}
+```
+
+Doublet distribution
+
+```{r}
+for (s in names(seu_list)) {
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    VlnPlot(
+      seu,
+      features = "doublet_score"
+    ) + ggtitle(s)
+  )
+  
+}
+```
+
+a
+
+```{r}
+for (s in names(seu_list)) {
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    FeatureScatter(
+      seu,
+      feature1 = "nCount_RNA",
+      feature2 = "doublet_score"
+    ) + ggtitle(s)
+  )
+  
+}
+```
+
+QC metrics
+
+```{r}
+library(ggplot2)
+
+for (s in names(seu_list)) {
+  
+  seu <- seu_list[[s]]
+  
+  df <- seu@meta.data
+  
+  print(
+    ggplot(df, aes(x = nFeature_RNA)) +
+      geom_histogram(bins = 100) +
+      ggtitle(paste("nFeature_RNA —", s))
+  )
+  
+}
+
+```
+
+Histogram
+
+```{r}
+for (s in names(seu_list)) {
+  
+  df <- seu_list[[s]]@meta.data
+  
+  print(
+    ggplot(df, aes(x = nCount_RNA)) +
+      geom_histogram(bins = 100) +
+      ggtitle(paste("nCount_RNA —", s))
+  )
+  
+}
+```
+
+mt
+
+```{r}
+for (s in names(seu_list)) {
+  
+  df <- seu_list[[s]]@meta.data
+  
+  print(
+    ggplot(df, aes(x = percent.mt)) +
+      geom_histogram(bins = 100) +
+      ggtitle(paste("percent.mt —", s))
+  )
+  
+}
+```
+
+counts x features
+
+```{r}
+for (s in names(seu_list)) {
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    FeatureScatter(
+      seu,
+      "nCount_RNA",
+      "nFeature_RNA"
+    ) + ggtitle(s)
+  )
+  
+}
+```
+
+counts x mt
+
+```{r}
+for (s in names(seu_list)) {
+  
+  seu <- seu_list[[s]]
+  
+  print(
+    FeatureScatter(
+      seu,
+      "nCount_RNA",
+      "percent.mt"
+    ) + ggtitle(s)
+  )
+  
+}
+```
+
+violin
+
+```{r}
+for (s in names(seu_list)) {
+  
+  df <- seu_list[[s]]@meta.data
+  
+  cor_matrix <- cor(
+    df[, c("nFeature_RNA","nCount_RNA","percent.mt")],
+    method = "spearman"
+  )
+  
+  cat("\nCorrelation matrix —", s, "\n")
+  print(cor_matrix)
+  
+}
+```
+
+s
+
+```{r}
+qc_summary <- do.call(
+  rbind,
+  lapply(names(seu_list), function(s){
+    
+    seu <- seu_list[[s]]
+    
+    data.frame(
+      sample = s,
+      cells = ncol(seu),
+      mean_features = mean(seu$nFeature_RNA),
+      mean_counts = mean(seu$nCount_RNA),
+      mean_mt = mean(seu$percent.mt)
+    )
+    
+  })
+)
+
+qc_summary
+```
+
+-   A amostra tal nao serguiraá analises, por alto %MT

@@ -31,7 +31,7 @@ csvs <- c(
 
 # Functions
 
-source("scripts/sc_pre_proc/pipeline/00_utils_general.R")
+source("/Users/julianapinto/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/pipeline/00_utils_general.R")
 
 mapping_table <- readRDS("annotation/ensembl109_full_mapping.rds")
 
@@ -60,7 +60,7 @@ for (path in csvs) {
   
   # Save counts
   outfile <- file.path(outdir, basename(path))
-  write.csv(df, outfile)
+  write.csv(df, gzfile(outfile))
   
   rm(df)
   gc()

@@ -21,3 +21,18 @@ results/
 
 # macOS
 .DS_Store
+
+# Claude / local environment
+.claude/
+
+# Temporary R files
+.RDataTmp*
+.RData
+
+# Quarto / notebooks outputs
+*.html
+*.pdf
+*.png
+
+# Notebooks build folders
+*_files/
