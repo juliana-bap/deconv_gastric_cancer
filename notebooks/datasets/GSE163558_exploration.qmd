@@ -1,0 +1,344 @@
+---
+title: "Single-cell dataset exploration"
+author: "Juliana Pinto"
+date: 03/12/2026
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSE163558"
+  data_dir: "data/sc_reference/raw/GSE163558"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 5
+)
+```
+
+# Dataset: `r params$dataset_id`
+
+This notebook explores the basic characteristics of a single-cell RNA-seq dataset prior to preprocessing. The goal is to understand the data structure, identify the types of genes present, and check the availability of metadata.
+
+This dataset is in **10x Genomics** format (barcodes.tsv.gz, features.tsv.gz, matrix.mtx.gz), so we use `Seurat::Read10X()` to load sparse count matrices.
+
+## Loading files
+
+We identify all sample subdirectories containing 10x Genomics files and load each one as a sparse count matrix.
+
+```{r load-files}
+library(Seurat)
+library(Matrix)
+
+project_root <- here::here()
+data_path <- file.path(project_root, params$data_dir)
+
+# Each sample is in its own subdirectory with barcodes/features/matrix files
+sample_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
+
+cat("Number of samples found:", length(sample_dirs), "\n")
+cat("Samples:\n")
+cat(paste("-", basename(sample_dirs)), sep = "\n")
+```
+
+```{r read-all}
+counts_list <- list()
+
+for (d in sample_dirs) {
+  sample_name <- basename(d)
+  cat("Reading:", sample_name, "...\n")
+  counts_list[[sample_name]] <- Read10X(data.dir = d)
+}
+```
+
+---
+
+## Per-sample exploration
+
+The sections below apply each check individually across all samples in the dataset.
+
+### Matrix dimensions (`dim`)
+
+We check the number of genes (rows) and cells (columns) for each sample. The expected format is **genes × cells**.
+
+```{r dim-counts}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("dim(counts):", dim(counts), "\n")
+  cat("  -> Genes:", nrow(counts), " | Cells:", ncol(counts), "\n")
+}
+```
+
+### Gene identifiers (`head(rownames)`)
+
+We inspect the first gene names to identify the type of annotation used (gene symbols, Ensembl IDs, etc.).
+
+```{r head-rownames}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(rownames(counts)):\n")
+  print(head(rownames(counts)))
+}
+```
+
+### First 20 genes (`head(rownames, 20)`)
+
+An expanded listing of the first 20 genes for a more detailed inspection of the naming convention.
+
+```{r head-rownames-20}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(rownames(counts), 20):\n")
+  print(head(rownames(counts), 20))
+}
+```
+
+```{r gene-id-type}
+# Automatic detection of gene identifier type
+first_genes <- head(rownames(counts_list[[1]]), 10)
+
+gene_id_type <- if (any(grepl("^ENSG", first_genes))) {
+  "Ensembl"
+} else if (any(grepl("^[A-Z][A-Z0-9]+$", first_genes))) {
+  "Gene Symbol"
+} else {
+  "Unknown"
+}
+
+cat("Detected gene identifier type:", gene_id_type, "\n")
+```
+
+### Cell barcodes (`head(colnames)`)
+
+We check the format of cell barcodes (matrix columns). Typical 10x Genomics barcodes follow the pattern `ACGT...ACGT-1`.
+
+```{r head-colnames}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(colnames(counts)):\n")
+  print(head(colnames(counts)))
+}
+```
+
+### Sequencing depth (`summary(colSums)`)
+
+The library size (total UMI count per cell) indicates sequencing depth. Very low values may indicate low-quality cells (empty droplets).
+
+```{r summary-colsums}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("summary(colSums(counts)):\n")
+  print(summary(colSums(counts)))
+}
+```
+
+### Genes detected per cell (`summary(colSums(counts > 0))`)
+
+The number of genes with at least 1 UMI per cell reflects transcriptional complexity. Cells with very few detected genes may be of low quality.
+
+```{r summary-genes-detected}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("summary(colSums(counts > 0)):\n")
+  print(summary(colSums(counts > 0)))
+}
+```
+
+### Sequencing depth histogram (`hist(log10(colSums + 1))`)
+
+The log10-scaled distribution allows visualizing the separation between empty droplets and real cells. A bimodal or unimodal distribution with a left tail is expected.
+
+```{r hist-colsums, fig.height=4}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  hist(
+    log10(colSums(counts) + 1),
+    main = paste("Library size -", name),
+    xlab = "log10(Total UMI + 1)",
+    col = "steelblue",
+    border = "white",
+    breaks = 50
+  )
+}
+```
+
+### Mitochondrial genes (`grepl("^MT-")`)
+
+Mitochondrial genes (`MT-` prefix) are classic indicators of cellular stress. A high fraction of mitochondrial reads (>20%) typically indicates cells undergoing apoptosis or damaged during tissue dissociation.
+
+```{r mito-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  mt_count <- sum(grepl("^MT-", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^MT-', rownames(counts))):", mt_count, "\n")
+  if (mt_count > 0) {
+    cat("MT genes found:\n")
+    print(grep("^MT-", rownames(counts), value = TRUE))
+  }
+}
+```
+
+### Ribosomal genes (`grepl("^RPL|^RPS")`)
+
+Ribosomal genes (prefixes `RPL` — large ribosomal subunit proteins — and `RPS` — small subunit) represent a significant fraction of the transcriptome. High fractions can mask relevant biological variability and are often filtered out or regressed.
+
+```{r ribo-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  ribo_count <- sum(grepl("^RPL|^RPS", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^RPL|^RPS', rownames(counts))):", ribo_count, "\n")
+}
+```
+
+### Hemoglobin genes (`grepl("^HB")`)
+
+Hemoglobin genes (e.g., `HBA1`, `HBA2`, `HBB`) indicate red blood cell contamination. Their excessive presence suggests issues with tissue dissociation or erythrocyte lysis.
+
+```{r hb-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  hb_count <- sum(grepl("^HB[ABDEG]", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^HB', rownames(counts))):", hb_count, "\n")
+  if (hb_count > 0) {
+    cat("HB genes found:\n")
+    print(grep("^HB[ABDEG]", rownames(counts), value = TRUE))
+  }
+}
+```
+
+### Duplicated genes (`sum(duplicated(rownames))`)
+
+Duplicated gene names cause issues when creating Seurat/SingleCellExperiment objects and in downstream analyses. If present, they should be handled (e.g., `make.unique()`).
+
+```{r duplicated-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  dup_count <- sum(duplicated(rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(duplicated(rownames(counts))):", dup_count, "\n")
+  if (dup_count > 0) {
+    dups <- rownames(counts)[duplicated(rownames(counts))]
+    cat("First duplicated genes:\n")
+    print(head(dups, 10))
+  }
+}
+```
+
+### Metadata check
+
+We check whether metadata files exist in the dataset directory and whether they contain relevant fields such as **cell type**, **patient**, **tissue**, and **condition**.
+
+```{r metadata-check}
+meta_files <- list.files(
+  data_path,
+  pattern = "meta|annotation|celltype|cluster|barcode",
+  ignore.case = TRUE,
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+# Exclude the standard 10x barcodes.tsv.gz files
+meta_files <- meta_files[!grepl("barcodes\\.tsv\\.gz$", meta_files)]
+
+cat("Metadata files found:", length(meta_files), "\n")
+if (length(meta_files) > 0) {
+  cat(paste("-", basename(meta_files)), sep = "\n")
+}
+```
+
+```{r metadata-fields}
+expected_fields <- c("celltype", "cell_type", "cell.type",
+                     "patient", "donor", "subject",
+                     "tissue", "organ",
+                     "condition", "disease", "treatment",
+                     "sample", "cluster", "annotation")
+
+if (length(meta_files) > 0) {
+  for (mf in meta_files) {
+    cat("\n===", basename(mf), "===\n")
+    meta <- tryCatch(
+      read.csv(mf, nrows = 5),
+      error = function(e) NULL
+    )
+    if (!is.null(meta)) {
+      cat("Available columns:\n")
+      cat(paste(" ", colnames(meta)), sep = "\n")
+      matches <- intersect(tolower(colnames(meta)), expected_fields)
+      cat("\nFields of interest found:",
+          ifelse(length(matches) > 0, paste(matches, collapse = ", "), "none"),
+          "\n")
+    }
+  }
+} else {
+  cat("No separate metadata files found.\n")
+  cat("\nMetadata availability:\n")
+  cat("  - celltype:  NOT AVAILABLE\n")
+  cat("  - patient:   NOT AVAILABLE\n")
+  cat("  - tissue:    NOT AVAILABLE\n")
+  cat("  - condition: NOT AVAILABLE\n")
+}
+```
+
+---
+
+## Overall dataset summary
+
+Summary table with the main characteristics identified in this exploration.
+
+```{r summary-table}
+first_counts <- counts_list[[1]]
+
+mt_present   <- any(sapply(counts_list, function(x) sum(grepl("^MT-", rownames(x)))) > 0)
+ribo_present <- any(sapply(counts_list, function(x) sum(grepl("^RPL|^RPS", rownames(x)))) > 0)
+hb_present   <- any(sapply(counts_list, function(x) sum(grepl("^HB[ABDEG]", rownames(x)))) > 0)
+dup_present  <- any(sapply(counts_list, function(x) sum(duplicated(rownames(x)))) > 0)
+
+summary_info <- data.frame(
+  Field = c(
+    "Dataset",
+    "Samples (libraries)",
+    "Total genes",
+    "Total cells",
+    "Gene ID type",
+    "Mitochondrial genes",
+    "Ribosomal genes",
+    "Hemoglobin genes",
+    "Duplicated genes",
+    "Metadata available"
+  ),
+  Value = c(
+    params$dataset_id,
+    length(counts_list),
+    nrow(first_counts),
+    sum(sapply(counts_list, ncol)),
+    gene_id_type,
+    ifelse(mt_present, "Present", "Absent"),
+    ifelse(ribo_present, "Present", "Absent"),
+    ifelse(hb_present, "Present", "Absent"),
+    ifelse(dup_present, "Present", "Absent"),
+    ifelse(length(meta_files) > 0, "Available", "Not available")
+  )
+)
+
+knitr::kable(summary_info, caption = paste("Dataset summary -", params$dataset_id))
+```
+
+---
+
+*Single-cell RNA-seq dataset initial exploration notebook.*
