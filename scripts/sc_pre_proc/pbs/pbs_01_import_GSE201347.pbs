@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N import_GSE201347
+#PBS -q CCAD_Q1
+#PBS -l select=1:ncpus=4:mem=64gb
+#PBS -l walltime=06:00:00
+#PBS -j oe
+#PBS -o /scratch/LABIOINF/jpinto/deconv_gastric_cancer/logs/01_import_GSE201347.log
+
+# ---- Project paths ----
+PROJECT_ROOT="/scratch/LABIOINF/jpinto/deconv_gastric_cancer"
+SCRIPT="${PROJECT_ROOT}/scripts/sc_pre_proc/pipeline/01_import/01_import_GSE201347.R"
+CONFIG="${PROJECT_ROOT}/scripts/sc_pre_proc/configs/config_GSE201347.R"
+
+# ---- Create log directory ----
+mkdir -p "${PROJECT_ROOT}/logs"
+
+# ---- Activate conda environment ----
+source /sw/apps/python/anaconda3-2024-10-1/etc/profile.d/conda.sh
+conda activate R_servidor
+
+# ---- Run ----
+cd "${PROJECT_ROOT}"
+
+echo "Job started: $(date)"
+echo "Node: $(hostname)"
+echo "Script: ${SCRIPT}"
+echo "Config: ${CONFIG}"
+echo "========================================="
+
+Rscript "${SCRIPT}" "${CONFIG}"
+
+echo "========================================="
+echo "Job finished: $(date)"

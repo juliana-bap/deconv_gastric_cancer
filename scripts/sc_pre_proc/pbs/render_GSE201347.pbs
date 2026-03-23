@@ -1,0 +1,16 @@
+#!/bin/bash
+#PBS -N render_GSE201347
+#PBS -q CCAD_Q1
+#PBS -l select=1:ncpus=21:mem=64gb
+#PBS -l walltime=24:00:00
+#PBS -j oe
+#PBS -o /scratch/LABIOINF/jpinto/deconv_gastric_cancer/render_GSE201347.log
+
+cd ~/scratch/deconv_gastric_cancer
+
+# Activate conda
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate R_servidor
+
+Rscript -e 'rmarkdown::render("notebooks/datasets/GSE201347_exploration.qmd")'
+

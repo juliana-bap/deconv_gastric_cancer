@@ -8,7 +8,7 @@
 # Description: Import HDF5 10x file, convert gene symbols to Ensembl IDs,
 #              save as sparse RDS, and download GEO metadata
 # Input: data/sc_reference/raw/GSE264203/GSE264203.h5
-# Output: data/sc_reference/raw/GSE264203/GSE264203_FIXED/GSE264203.rds
+# Output: data/sc_reference/raw/GSE264203/GSE264203_FIXED/<sample>.rds (one per barcode suffix)
 #         data/sc_reference/metadata/metadata_GSE264203.rds
 # Usage: Rscript 01_import_GSE264203.R <config_path>
 # Author: Juliana Pinto

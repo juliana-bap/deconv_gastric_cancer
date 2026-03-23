@@ -1,20 +1,24 @@
 # ==============================
-# CONFIG - GSE201347 (PLACEHOLDER)
+# CONFIG - GSE201347
 # Project: Gastric Cancer Deconvolution
 # Source: GEO
 # Technology: 10x Genomics
 # Reference genome: GRCh38
-# Format: RDS (pre-built integrated Seurat object, ~18GB)
-# Note: This dataset will be processed on the server due to memory requirements.
-#       Script 01 has not been created yet.
+# Format: RDS (pre-built Seurat object, ~18GB, 22 samples)
+# Note: Processed on server due to memory requirements
 # ==============================
 
 # ---- Dataset identity ----
 dataset_id <- "GSE201347"
 
-# ---- Project root ----
-# TODO: Update to server path when running on the server
-project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
+# ---- Project root (server) ----
+project_root <- "/scratch/LABIOINF/jpinto/deconv_gastric_cancer"
+
+# ---- Script 01: Import parameters ----
+# Column in Seurat metadata that identifies samples
+sample_column <- "orig.ident"
+# Path to the original RDS file
+seurat_rds_path <- file.path(project_root, "data", "sc_reference", "raw", dataset_id, paste0(dataset_id, ".rds"))
 
 # ---- Base directories ----
 raw_base_dir <- file.path(project_root, "data", "sc_reference", "raw", dataset_id)
