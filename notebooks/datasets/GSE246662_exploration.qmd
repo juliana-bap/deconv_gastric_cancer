@@ -160,7 +160,7 @@ for (name in names(counts_list)) {
 
 The log10-scaled distribution allows visualizing the separation between empty droplets and real cells. A bimodal or unimodal distribution with a left tail is expected.
 
-```{r hist-colsums, fig.height=4}
+```{r hist-colsums, fig.height=4, results='asis'}
 for (name in names(counts_list)) {
   counts <- counts_list[[name]]
   hist(
@@ -171,6 +171,7 @@ for (name in names(counts_list)) {
     border = "white",
     breaks = 50
   )
+  cat("\n\n")
 }
 ```
 

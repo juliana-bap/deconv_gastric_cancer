@@ -34,12 +34,16 @@ source(config_path)
 source(utils_path)
 
 # ---- Libraries ----
+# NOTE: Do NOT load Seurat before readRDS.
+# The RDS may have been saved with a different Seurat version,
+# causing S4 class validation errors on load.
+# Loading only Matrix allows R to read the object as a generic S4,
+# and we extract counts/metadata directly via @ slots.
 suppressPackageStartupMessages({
-  library(Seurat)
   library(Matrix)
 })
 
-# ---- Load Seurat object ----
+# ---- Load Seurat object (without Seurat library) ----
 cat("\n=============================\n")
 cat("Dataset:", dataset_id, "\n")
 cat("Loading Seurat object:", basename(seurat_rds_path), "\n")
@@ -47,21 +51,40 @@ cat("File size:", round(file.size(seurat_rds_path) / 1e9, 1), "GB\n")
 
 seu <- readRDS(seurat_rds_path)
 
-cat("Object dimensions:", dim(seu), "\n")
+cat("Object loaded successfully\n")
+
+# ---- Extract count matrix (handle v3/v4 and v5 structures) ----
+counts <- tryCatch(
+  seu@assays$RNA@counts,
+  error = function(e1) {
+    tryCatch(
+      seu@assays$RNA@layers$counts,
+      error = function(e2) {
+        stop("Could not extract count matrix. Tried @counts (v3/v4) and @layers$counts (v5).")
+      }
+    )
+  }
+)
+
+cat("Count matrix dimensions:", nrow(counts), "x", ncol(counts), "\n")
+
+# ---- Extract cell metadata ----
+cell_metadata <- seu@meta.data
+
+cat("Available metadata columns:", paste(colnames(cell_metadata), collapse = ", "), "\n")
 
 # ---- Identify samples ----
-if (!sample_column %in% colnames(seu@meta.data)) {
-  cat("Available metadata columns:", paste(colnames(seu@meta.data), collapse = ", "), "\n")
+if (!sample_column %in% colnames(cell_metadata)) {
   stop("Sample column '", sample_column, "' not found in metadata. Update config.")
 }
 
-samples <- unique(seu@meta.data[[sample_column]])
+samples <- unique(cell_metadata[[sample_column]])
 cat("Number of samples:", length(samples), "\n")
 cat("Samples:", paste(samples, collapse = ", "), "\n")
 
-# ---- Extract count matrix ----
-counts <- GetAssayData(seu, slot = "counts")
-cat("Count matrix dimensions:", dim(counts), "\n")
+# ---- Free Seurat object early (keep only counts + metadata) ----
+rm(seu)
+gc()
 
 # ---- Check gene ID type and convert if needed ----
 if (is_ensembl(rownames(counts))) {
@@ -75,11 +98,6 @@ if (is_ensembl(rownames(counts))) {
 }
 
 cat("Count matrix after conversion:", dim(counts), "\n")
-
-# ---- Free Seurat object, keep only metadata ----
-cell_metadata <- seu@meta.data
-rm(seu)
-gc()
 
 # ---- Output directory ----
 dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)

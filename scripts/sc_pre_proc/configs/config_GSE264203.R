@@ -6,7 +6,8 @@
 # Reference genome: GRCh38
 # Format: HDF5 (.h5) - single file
 # Gene IDs: Symbols (converted to Ensembl in script 01)
-# Samples: 1 (single H5 file, not split by sample)
+# Samples: 7 barcode suffixes (-1 to -7), 6 GSMs in GEO (GC1-GC6)
+# Note: Mapping suffix -> GSM unknown. Contact authors for confirmation.
 # ==============================
 
 # ---- Dataset identity ----
@@ -43,6 +44,13 @@ utils_path <- file.path(project_root, "scripts", "sc_pre_proc", "pipeline", "00_
 # ---- Metadata ----
 metadata_dir <- file.path(project_root, "data", "sc_reference", "metadata")
 metadata_path <- file.path(metadata_dir, paste0("metadata_", dataset_id, ".rds"))
+
+# ---- Barcode suffix to sample mapping ----
+# H5 file contains 7 barcode suffixes (-1 to -7) but GEO lists 6 samples (GC1-GC6)
+# Update when mapping is confirmed (e.g., from authors):
+#   suffix_to_sample <- c("1"="GSM8213939_GC1", "2"="GSM8213940_GC2", ...)
+# NULL = use generic names (GSE264203_sample_1, GSE264203_sample_2, ...)
+suffix_to_sample <- NULL
 
 # ---- Seurat creation parameters ----
 min_cells <- 3

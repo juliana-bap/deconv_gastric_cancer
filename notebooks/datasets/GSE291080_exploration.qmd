@@ -41,7 +41,11 @@ project_root <- here::here()
 data_path <- file.path(project_root, params$data_dir)
 
 # Each sample is in its own subdirectory with barcodes/features/matrix files
+# Filter only directories containing 10x files (excludes FIXED, processed, etc.)
 sample_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
+sample_dirs <- sample_dirs[sapply(sample_dirs, function(d) {
+  file.exists(file.path(d, "matrix.mtx.gz"))
+})]
 
 cat("Number of samples found:", length(sample_dirs), "\n")
 cat("Samples:\n")
@@ -76,23 +80,7 @@ if (length(failed_samples) > 0) {
   cat(paste("-", failed_samples), sep = "\n")
 }
 ```
-```{r}
-library(Matrix)
-
-mat <- readMM("/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE291080/GSM8828843_a187_es/matrix.mtx.gz")
-dim(mat)
-```
-
-```{r}
-barcodes <- read.table("/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE291080/GSM8828843_a187_es/barcodes.tsv.gz")
-nrow(barcodes)
-```
-
-```{r}
-features <- read.table("/Users/julianapinto/doutorado/deconv_gastric_cancer/data/sc_reference/raw/GSE291080/GSM8828843_a187_es/features.tsv.gz")
-nrow(features)
-```
-Sample GSM8828843_a187_es failed to load with Read10X due to mismatch between barcode count (20540) and matrix columns (5627). This likely reflects a GEO deposition issue (raw barcodes vs filtered matrix). The sample was excluded from further analyses. Remaining samples: 44. 
+---
 
 ## Per-sample exploration
 
@@ -195,7 +183,7 @@ for (name in names(counts_list)) {
 
 The log10-scaled distribution allows visualizing the separation between empty droplets and real cells. A bimodal or unimodal distribution with a left tail is expected.
 
-```{r hist-colsums, fig.height=4}
+```{r hist-colsums, fig.height=4, results='asis'}
 for (name in names(counts_list)) {
   counts <- counts_list[[name]]
   hist(
@@ -206,6 +194,7 @@ for (name in names(counts_list)) {
     border = "white",
     breaks = 50
   )
+  cat("\n\n")
 }
 ```
 

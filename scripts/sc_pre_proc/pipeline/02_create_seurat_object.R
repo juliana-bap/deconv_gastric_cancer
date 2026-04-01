@@ -90,7 +90,13 @@ for (i in seq_along(rds_files)) {
 
   # ---- Add dataset and sample identifiers ----
   seu$dataset_id <- dataset_id
-  gsm_id <- sub("_.*", "", samp)
+
+  # Extract GSM ID if filename starts with GSM, otherwise use full sample name
+  if (grepl("^GSM", samp)) {
+    gsm_id <- sub("_.*", "", samp)
+  } else {
+    gsm_id <- samp
+  }
   seu$sample_id <- gsm_id
 
   cat("dataset_id:", dataset_id, "\n")

@@ -1,0 +1,546 @@
+---
+title: "Single-cell dataset exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+  data_dir: "data/sc_reference/raw/GSExxxxxx"
+  # --- Format: choose ONE ---
+  # "csv"  -> CSV files (one per sample)
+  # "10x"  -> 10x Genomics directories (barcodes/features/matrix)
+  # "h5"   -> Single HDF5 file
+  # "rds"  -> RDS file (Seurat object or matrix)
+  data_format: "10x"
+  # --- Only for h5/rds: filename within data_dir ---
+  data_file: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 5
+)
+```
+
+# Dataset: `r params$dataset_id`
+
+This notebook explores the basic characteristics of a single-cell RNA-seq
+dataset prior to preprocessing. The goal is to understand the data structure,
+identify the types of genes present, and check the availability of metadata.
+
+## Loading data
+
+```{r load-libraries}
+library(Seurat)
+library(Matrix)
+
+project_root <- here::here()
+data_path <- file.path(project_root, params$data_dir)
+```
+
+```{r load-data}
+# -------------------------------------------------------------------
+# Load data according to format
+# Output: counts_list (named list of count matrices, one per sample)
+#         is_seurat    (TRUE if the source was a Seurat object)
+#         seurat_obj   (the original object, only when format = "rds")
+# -------------------------------------------------------------------
+is_seurat <- FALSE
+seurat_obj <- NULL
+
+if (params$data_format == "csv") {
+
+  csv_files <- list.files(data_path, pattern = "\\.csv(\\.gz)?$",
+                          full.names = TRUE)
+  cat("CSV files found:", length(csv_files), "\n")
+  cat(paste("-", basename(csv_files)), sep = "\n")
+
+  counts_list <- list()
+  for (f in csv_files) {
+    sample_name <- sub("\\.csv(\\.gz)?$", "", basename(f))
+    cat("Reading:", sample_name, "...\n")
+    counts_list[[sample_name]] <- read.csv(f, row.names = 1,
+                                           check.names = FALSE)
+  }
+
+} else if (params$data_format == "10x") {
+
+  sample_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
+  # Keep only directories that contain 10x files
+  sample_dirs <- sample_dirs[sapply(sample_dirs, function(d) {
+    file.exists(file.path(d, "matrix.mtx.gz"))
+  })]
+  cat("10x sample directories found:", length(sample_dirs), "\n")
+  cat(paste("-", basename(sample_dirs)), sep = "\n")
+
+  counts_list <- list()
+  failed_samples <- character()
+  for (d in sample_dirs) {
+    sample_name <- basename(d)
+    cat("Reading:", sample_name, "...")
+    result <- tryCatch(Read10X(data.dir = d),
+                       error = function(e) {
+                         cat(" FAILED -", conditionMessage(e), "\n")
+                         return(NULL)
+                       })
+    if (!is.null(result)) {
+      counts_list[[sample_name]] <- result
+      cat(" OK\n")
+    } else {
+      failed_samples <- c(failed_samples, sample_name)
+    }
+  }
+  if (length(failed_samples) > 0) {
+    cat("\nFailed samples:\n")
+    cat(paste("-", failed_samples), sep = "\n")
+  }
+
+} else if (params$data_format == "h5") {
+
+  h5_path <- file.path(data_path, params$data_file)
+  cat("H5 file:", basename(h5_path), "\n")
+  cat("File size:", round(file.size(h5_path) / 1e6, 1), "MB\n")
+
+  counts <- Read10X_h5(filename = h5_path)
+  if (is.list(counts)) {
+    cat("Multiple modalities detected:", paste(names(counts), collapse = ", "), "\n")
+    cat("Using 'Gene Expression' matrix.\n")
+    counts <- counts[["Gene Expression"]]
+  }
+  counts_list <- list(all_cells = counts)
+  rm(counts)
+
+} else if (params$data_format == "rds") {
+
+  rds_path <- file.path(data_path, params$data_file)
+  cat("RDS file:", basename(rds_path), "\n")
+  cat("File size:", round(file.size(rds_path) / 1e9, 2), "GB\n")
+
+  obj <- readRDS(rds_path)
+  if (inherits(obj, "Seurat")) {
+    obj <- UpdateSeuratObject(obj)
+    is_seurat <- TRUE
+    seurat_obj <- obj
+    cat("Seurat object loaded.\n")
+    print(obj)
+    counts <- tryCatch(
+      GetAssayData(obj, assay = "RNA", slot = "counts"),
+      error = function(e) GetAssayData(obj, slot = "counts")
+    )
+  } else {
+    counts <- as(obj, "dgCMatrix")
+    rm(obj)
+  }
+  counts_list <- list(all_cells = counts)
+  rm(counts)
+
+} else {
+  stop("Unknown data_format: ", params$data_format,
+       ". Use 'csv', '10x', 'h5', or 'rds'.")
+}
+
+cat("\nSamples loaded:", length(counts_list), "\n")
+cat("Total cells:", sum(sapply(counts_list, ncol)), "\n")
+```
+
+---
+
+## Per-sample exploration
+
+The sections below apply each check across all samples in the dataset.
+
+### Matrix dimensions (`dim`)
+
+We check the number of genes (rows) and cells (columns) for each sample.
+The expected format is **genes x cells**.
+
+```{r dim-counts}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("dim(counts):", dim(counts), "\n")
+  cat("  -> Genes:", nrow(counts), " | Cells:", ncol(counts), "\n")
+}
+```
+
+### Gene identifiers (`head(rownames)`)
+
+We inspect the first gene names to identify the type of annotation used
+(gene symbols, Ensembl IDs, etc.).
+
+```{r head-rownames}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(rownames(counts)):\n")
+  print(head(rownames(counts)))
+}
+```
+
+### First 20 genes (`head(rownames, 20)`)
+
+An expanded listing of the first 20 genes for a more detailed inspection
+of the naming convention.
+
+```{r head-rownames-20}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(rownames(counts), 20):\n")
+  print(head(rownames(counts), 20))
+}
+```
+
+```{r gene-id-type}
+first_genes <- head(rownames(counts_list[[1]]), 10)
+
+gene_id_type <- if (any(grepl("^ENSG", first_genes))) {
+  "Ensembl"
+} else if (any(grepl("^[A-Z][A-Z0-9]+$", first_genes))) {
+  "Gene Symbol"
+} else {
+  "Unknown"
+}
+
+cat("Detected gene identifier type:", gene_id_type, "\n")
+```
+
+### Cell barcodes (`head(colnames)`)
+
+We check the format of cell barcodes (matrix columns). Typical 10x Genomics
+barcodes follow the pattern `ACGT...ACGT-1`.
+
+```{r head-colnames}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("head(colnames(counts)):\n")
+  print(head(colnames(counts)))
+}
+```
+
+### Sequencing depth (`summary(colSums)`)
+
+The library size (total UMI count per cell) indicates sequencing depth.
+Very low values may indicate low-quality cells (empty droplets).
+
+```{r summary-colsums}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("summary(colSums(counts)):\n")
+  print(summary(colSums(counts)))
+}
+```
+
+### Genes detected per cell (`summary(colSums(counts > 0))`)
+
+The number of genes with at least 1 UMI per cell reflects transcriptional
+complexity. Cells with very few detected genes may be of low quality.
+
+```{r summary-genes-detected}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  cat("\n===", name, "===\n")
+  cat("summary(colSums(counts > 0)):\n")
+  print(summary(colSums(counts > 0)))
+}
+```
+
+### Sequencing depth histogram (`hist(log10(colSums + 1))`)
+
+The log10-scaled distribution allows visualizing the separation between
+empty droplets and real cells. A bimodal or unimodal distribution with a
+left tail is expected.
+
+```{r hist-colsums, fig.height=4, results='asis'}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  hist(
+    log10(colSums(counts) + 1),
+    main = paste("Library size -", name),
+    xlab = "log10(Total UMI + 1)",
+    col = "steelblue",
+    border = "white",
+    breaks = 50
+  )
+  cat("\n\n")
+}
+```
+
+### Mitochondrial genes (`grepl("^MT-")`)
+
+Mitochondrial genes (`MT-` prefix) are classic indicators of cellular stress.
+A high fraction of mitochondrial reads (>20%) typically indicates cells
+undergoing apoptosis or damaged during tissue dissociation.
+
+```{r mito-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  mt_count <- sum(grepl("^MT-", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^MT-', rownames(counts))):", mt_count, "\n")
+  if (mt_count > 0) {
+    cat("MT genes found:\n")
+    print(grep("^MT-", rownames(counts), value = TRUE))
+  }
+}
+```
+
+### Ribosomal genes (`grepl("^RPL|^RPS")`)
+
+Ribosomal genes (prefixes `RPL` — large ribosomal subunit proteins — and
+`RPS` — small subunit) represent a significant fraction of the transcriptome.
+High fractions can mask relevant biological variability and are often filtered
+out or regressed.
+
+```{r ribo-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  ribo_count <- sum(grepl("^RPL|^RPS", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^RPL|^RPS', rownames(counts))):", ribo_count, "\n")
+}
+```
+
+### Hemoglobin genes (`grepl("^HB")`)
+
+Hemoglobin genes (e.g., `HBA1`, `HBA2`, `HBB`) indicate red blood cell
+contamination. Their excessive presence suggests issues with tissue
+dissociation or erythrocyte lysis.
+
+```{r hb-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  hb_count <- sum(grepl("^HB[ABDEG]", rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(grepl('^HB', rownames(counts))):", hb_count, "\n")
+  if (hb_count > 0) {
+    cat("HB genes found:\n")
+    print(grep("^HB[ABDEG]", rownames(counts), value = TRUE))
+  }
+}
+```
+
+### Duplicated genes (`sum(duplicated(rownames))`)
+
+Duplicated gene names cause issues when creating Seurat/SingleCellExperiment
+objects and in downstream analyses. If present, they should be handled
+(e.g., `make.unique()`).
+
+```{r duplicated-genes}
+for (name in names(counts_list)) {
+  counts <- counts_list[[name]]
+  dup_count <- sum(duplicated(rownames(counts)))
+  cat("\n===", name, "===\n")
+  cat("sum(duplicated(rownames(counts))):", dup_count, "\n")
+  if (dup_count > 0) {
+    dups <- rownames(counts)[duplicated(rownames(counts))]
+    cat("First duplicated genes:\n")
+    print(head(dups, 10))
+  }
+}
+```
+
+### Metadata check
+
+We check whether metadata is available — either embedded in a Seurat object
+or as separate files in the dataset directory.
+
+```{r metadata-check}
+meta <- NULL
+
+if (is_seurat && !is.null(seurat_obj)) {
+  meta <- seurat_obj@meta.data
+  cat("Metadata from Seurat object.\n")
+  cat("Dimensions:", dim(meta), "\n")
+  cat("  -> Cells:", nrow(meta), " | Fields:", ncol(meta), "\n\n")
+  cat("Available metadata columns:\n")
+  cat(paste(" ", colnames(meta)), sep = "\n")
+} else {
+  meta_files <- list.files(
+    data_path,
+    pattern = "meta|annotation|celltype|cluster|barcode",
+    ignore.case = TRUE,
+    full.names = TRUE,
+    recursive = TRUE
+  )
+  # Exclude standard 10x barcodes files
+  meta_files <- meta_files[!grepl("barcodes\\.tsv\\.gz$", meta_files)]
+
+  cat("Metadata files found:", length(meta_files), "\n")
+  if (length(meta_files) > 0) {
+    cat(paste("-", basename(meta_files)), sep = "\n")
+  }
+}
+```
+
+```{r metadata-fields}
+expected_fields <- c("celltype", "cell_type", "cell.type",
+                     "patient", "donor", "subject",
+                     "tissue", "organ",
+                     "condition", "disease", "treatment",
+                     "sample", "cluster", "annotation",
+                     "orig.ident", "seurat_clusters")
+
+if (!is.null(meta)) {
+  # Seurat embedded metadata
+  matches <- colnames(meta)[tolower(colnames(meta)) %in% expected_fields]
+  cat("Fields of interest found:",
+      ifelse(length(matches) > 0, paste(matches, collapse = ", "), "none"),
+      "\n\n")
+  for (field in matches) {
+    cat("\n===", field, "===\n")
+    vals <- unique(meta[[field]])
+    cat("Unique values:", length(vals), "\n")
+    if (length(vals) <= 30) {
+      print(sort(vals))
+    } else {
+      cat("First 30 values:\n")
+      print(head(sort(vals), 30))
+    }
+  }
+} else if (exists("meta_files") && length(meta_files) > 0) {
+  # Separate metadata files
+  for (mf in meta_files) {
+    cat("\n===", basename(mf), "===\n")
+    mdata <- tryCatch(read.csv(mf, nrows = 5), error = function(e) NULL)
+    if (!is.null(mdata)) {
+      cat("Available columns:\n")
+      cat(paste(" ", colnames(mdata)), sep = "\n")
+      matches <- intersect(tolower(colnames(mdata)), expected_fields)
+      cat("\nFields of interest found:",
+          ifelse(length(matches) > 0, paste(matches, collapse = ", "), "none"),
+          "\n")
+    }
+  }
+} else {
+  cat("No metadata available.\n")
+  cat("  - celltype:  NOT AVAILABLE\n")
+  cat("  - patient:   NOT AVAILABLE\n")
+  cat("  - tissue:    NOT AVAILABLE\n")
+  cat("  - condition: NOT AVAILABLE\n")
+}
+```
+
+### Per-sample cell counts
+
+If sample-level identifiers exist in the metadata, we report the number of
+cells per sample.
+
+```{r per-sample-counts}
+sample_counts <- NULL
+
+if (!is.null(meta)) {
+  sample_col <- NULL
+  for (col in c("orig.ident", "sample", "patient", "donor", "subject")) {
+    if (col %in% colnames(meta)) {
+      sample_col <- col
+      break
+    }
+  }
+  if (!is.null(sample_col)) {
+    cat("Using column '", sample_col, "' as sample identifier:\n\n", sep = "")
+    sample_counts <- sort(table(meta[[sample_col]]), decreasing = TRUE)
+    print(data.frame(
+      Sample = names(sample_counts),
+      Cells = as.integer(sample_counts),
+      row.names = NULL
+    ))
+    cat("\nTotal samples:", length(sample_counts), "\n")
+  }
+} else if (length(counts_list) > 1) {
+  cat("Samples from file structure:\n\n")
+  sample_counts <- sapply(counts_list, ncol)
+  print(data.frame(
+    Sample = names(sample_counts),
+    Cells = as.integer(sample_counts),
+    row.names = NULL
+  ))
+  cat("\nTotal samples:", length(sample_counts), "\n")
+} else {
+  cat("Single matrix loaded; no per-sample breakdown available.\n")
+}
+```
+
+---
+
+## Overall dataset summary
+
+Summary table with the main characteristics identified in this exploration.
+
+```{r cleanup, include=FALSE}
+# Save summary variables before freeing large objects
+first_counts <- counts_list[[1]]
+mt_present   <- any(sapply(counts_list, function(x) sum(grepl("^MT-", rownames(x)))) > 0)
+ribo_present <- any(sapply(counts_list, function(x) sum(grepl("^RPL|^RPS", rownames(x)))) > 0)
+hb_present   <- any(sapply(counts_list, function(x) sum(grepl("^HB[ABDEG]", rownames(x)))) > 0)
+dup_present  <- any(sapply(counts_list, function(x) sum(duplicated(rownames(x)))) > 0)
+n_genes      <- nrow(first_counts)
+n_cells      <- sum(sapply(counts_list, ncol))
+n_samples    <- if (!is.null(sample_counts)) length(sample_counts) else length(counts_list)
+
+meta_available <- if (!is.null(meta)) {
+  key_fields <- colnames(meta)[tolower(colnames(meta)) %in%
+    c("celltype", "cell_type", "cell.type", "annotation", "cluster", "seurat_clusters")]
+  ifelse(length(key_fields) > 0,
+         paste("Available (", paste(key_fields, collapse = ", "), ")", sep = ""),
+         "Partial (no cell type annotation)")
+} else if (exists("meta_files") && length(meta_files) > 0) {
+  "Available (separate files)"
+} else {
+  "Not available"
+}
+
+# Free memory (important for large datasets like RDS)
+rm(counts_list, first_counts)
+if (exists("seurat_obj")) rm(seurat_obj)
+if (exists("meta")) rm(meta)
+gc()
+```
+
+```{r summary-table}
+summary_info <- data.frame(
+  Field = c(
+    "Dataset",
+    "Data format",
+    "Samples (libraries)",
+    "Total genes",
+    "Total cells",
+    "Gene ID type",
+    "Mitochondrial genes",
+    "Ribosomal genes",
+    "Hemoglobin genes",
+    "Duplicated genes",
+    "Metadata available"
+  ),
+  Value = c(
+    params$dataset_id,
+    params$data_format,
+    as.character(n_samples),
+    n_genes,
+    n_cells,
+    gene_id_type,
+    ifelse(mt_present, "Present", "Absent"),
+    ifelse(ribo_present, "Present", "Absent"),
+    ifelse(hb_present, "Present", "Absent"),
+    ifelse(dup_present, "Present", "Absent"),
+    meta_available
+  )
+)
+
+knitr::kable(summary_info, caption = paste("Dataset summary -", params$dataset_id))
+```
+
+---
+
+*Single-cell RNA-seq dataset initial exploration notebook.*

@@ -1,15 +1,23 @@
 #!/usr/bin/env Rscript
 
 # ==============================
-# SCRIPT: 04_qc_filtering.R
+# SCRIPT: 04_qc_filtering_mad.R
 # Project: Gastric Cancer Deconvolution
 # Phase: sc_pre_proc
-# Description: Filter low-quality cells using fixed cutoffs (unified across datasets)
+# Description: Filter low-quality cells using fixed cutoffs (unified)
+#              + MAD-based outlier removal as intra-sample safety net.
+#              Fixed cutoffs are applied FIRST (same for all datasets),
+#              then MAD removes extreme outliers within each sample.
 # Input: Seurat objects with QC metrics (from script 03)
 # Output: Filtered Seurat objects + filtering summary CSV
-# Usage: Rscript 04_qc_filtering.R <config_path>
+# Usage: Rscript 04_qc_filtering_mad.R <config_path>
 # Author: Juliana Pinto
 # Date: 2026
+#
+# Config parameters used:
+#   qc_min_features, qc_max_features, qc_min_counts, qc_max_percent_mt
+#   remove_doublets
+#   mad_threshold (default: 5 — conservative, only catches extreme outliers)
 # ==============================
 
 suppressPackageStartupMessages({
@@ -20,11 +28,30 @@ suppressPackageStartupMessages({
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) == 0) {
-  stop("Usage: Rscript 04_qc_filtering.R <config_path>\n  No config file provided.")
+  stop("Usage: Rscript 04_qc_filtering_mad.R <config_path>\n  No config file provided.")
 }
 
 config_path <- normalizePath(args[1])
 source(config_path)
+
+# ---- MAD threshold (default 5 if not in config) ----
+if (!exists("mad_threshold")) mad_threshold <- 5
+
+# ---- Helper: flag outliers by MAD ----
+is_outlier_mad <- function(x, nmads = mad_threshold, type = "both") {
+  med <- median(x)
+  mad_val <- mad(x, constant = 1.4826)
+
+  if (mad_val == 0) return(rep(FALSE, length(x)))
+
+  if (type == "both") {
+    return(x < (med - nmads * mad_val) | x > (med + nmads * mad_val))
+  } else if (type == "upper") {
+    return(x > (med + nmads * mad_val))
+  } else if (type == "lower") {
+    return(x < (med - nmads * mad_val))
+  }
+}
 
 # ---- Create output directory ----
 dir.create(seurat_qc_filtered_dir, recursive = TRUE, showWarnings = FALSE)
@@ -36,38 +63,18 @@ seurat_files <- list.files(
   full.names = TRUE
 )
 
-# ---- Exclude samples (from config) ----
-sample_names_in_files <- sub("_seurat_qc_metrics.rds", "", basename(seurat_files))
-
-# Biological exclusion (e.g., metastases, non-primary tumor)
-if (exists("samples_to_exclude_bio") && length(samples_to_exclude_bio) > 0) {
-  matched_bio <- samples_to_exclude_bio[samples_to_exclude_bio %in% sample_names_in_files]
-  if (length(matched_bio) > 0) {
-    cat("Excluding samples (biological):", paste(matched_bio, collapse = ", "), "\n")
-    seurat_files <- seurat_files[!sample_names_in_files %in% matched_bio]
-    sample_names_in_files <- sub("_seurat_qc_metrics.rds", "", basename(seurat_files))
-  }
-}
-
-# Quality exclusion (e.g., failed QC, low cell count)
-if (exists("samples_to_exclude_qc") && length(samples_to_exclude_qc) > 0) {
-  matched_qc <- samples_to_exclude_qc[samples_to_exclude_qc %in% sample_names_in_files]
-  if (length(matched_qc) > 0) {
-    cat("Excluding samples (quality):", paste(matched_qc, collapse = ", "), "\n")
-    seurat_files <- seurat_files[!sample_names_in_files %in% matched_qc]
-  }
-}
-
 cat("\n=============================\n")
-cat("Script: 04_qc_filtering.R\n")
+cat("Script: 04_qc_filtering_mad.R\n")
 cat("Dataset:", dataset_id, "\n")
-cat("Samples to process:", length(seurat_files), "\n")
-cat("Filtering strategy: fixed cutoffs\n")
+cat("Samples found:", length(seurat_files), "\n")
+cat("Filtering strategy: fixed cutoffs + MAD safety net\n")
 cat("-----------------------------\n")
-cat("  nFeature_RNA: >", qc_min_features, "and <", qc_max_features, "\n")
-cat("  nCount_RNA:   >", qc_min_counts, "\n")
-cat("  percent.mt:   <", qc_max_percent_mt, "\n")
-cat("  Remove doublets:", remove_doublets, "\n")
+cat("  Fixed cutoffs:\n")
+cat("    nFeature_RNA: >", qc_min_features, "and <", qc_max_features, "\n")
+cat("    nCount_RNA:   >", qc_min_counts, "\n")
+cat("    percent.mt:   <", qc_max_percent_mt, "\n")
+cat("    Remove doublets:", remove_doublets, "\n")
+cat("  MAD threshold:", mad_threshold, "(intra-sample outlier removal)\n")
 
 # ---- Storage for summary ----
 filter_summary <- list()
@@ -87,7 +94,7 @@ for (i in seq_along(seurat_files)) {
   n_before <- ncol(seu)
   cat("Cells before filtering:", n_before, "\n")
 
-  # ---- Apply fixed cutoffs ----
+  # ---- Step 1: Apply fixed cutoffs ----
   seu <- subset(
     seu,
     subset =
@@ -97,10 +104,36 @@ for (i in seq_along(seurat_files)) {
       percent.mt < qc_max_percent_mt
   )
 
-  n_after_qc <- ncol(seu)
-  cat("Cells after QC cutoffs:", n_after_qc, "\n")
+  n_after_fixed <- ncol(seu)
+  cat("Cells after fixed cutoffs:", n_after_fixed, "\n")
 
-  # ---- Remove doublets ----
+  # ---- Step 2: MAD-based outlier removal (intra-sample) ----
+  # Applied on the surviving cells after fixed cutoffs
+  # Only flags extreme outliers (default 5 MADs)
+  df <- seu@meta.data
+
+  outlier_features <- is_outlier_mad(df$nFeature_RNA, type = "both")
+  outlier_counts   <- is_outlier_mad(df$nCount_RNA, type = "both")
+  outlier_mt       <- is_outlier_mad(df$percent.mt, type = "upper")
+
+  mad_outliers <- outlier_features | outlier_counts | outlier_mt
+  n_mad_removed <- sum(mad_outliers)
+
+  if (n_mad_removed > 0) {
+    cat("MAD outliers removed:", n_mad_removed, "\n")
+    cat("  - nFeature_RNA:", sum(outlier_features), "\n")
+    cat("  - nCount_RNA:", sum(outlier_counts), "\n")
+    cat("  - percent.mt:", sum(outlier_mt), "\n")
+
+    cells_keep <- rownames(df)[!mad_outliers]
+    seu <- subset(seu, cells = cells_keep)
+  } else {
+    cat("MAD outliers removed: 0\n")
+  }
+
+  n_after_mad <- ncol(seu)
+
+  # ---- Step 3: Remove doublets ----
   n_doublets_removed <- 0
 
   if (remove_doublets && "scDblFinder.class" %in% colnames(seu@meta.data)) {
@@ -121,7 +154,9 @@ for (i in seq_along(seurat_files)) {
   filter_summary[[samp]] <- data.frame(
     sample = samp,
     cells_before = n_before,
-    cells_after_qc = n_after_qc,
+    cells_after_fixed = n_after_fixed,
+    mad_outliers = n_mad_removed,
+    cells_after_mad = n_after_mad,
     doublets_removed = n_doublets_removed,
     cells_after = n_after,
     cells_removed = n_removed,
@@ -133,18 +168,19 @@ for (i in seq_along(seurat_files)) {
   saveRDS(seu, file = outfile)
   cat("Saved:", outfile, "\n")
 
-  rm(seu)
+  rm(seu, df)
   gc()
 }
 
 # ---- Save filtering summary ----
 summary_df <- do.call(rbind, filter_summary)
 
-# Add totals row
 totals <- data.frame(
   sample = "TOTAL",
   cells_before = sum(summary_df$cells_before),
-  cells_after_qc = sum(summary_df$cells_after_qc),
+  cells_after_fixed = sum(summary_df$cells_after_fixed),
+  mad_outliers = sum(summary_df$mad_outliers),
+  cells_after_mad = sum(summary_df$cells_after_mad),
   doublets_removed = sum(summary_df$doublets_removed),
   cells_after = sum(summary_df$cells_after),
   cells_removed = sum(summary_df$cells_removed),

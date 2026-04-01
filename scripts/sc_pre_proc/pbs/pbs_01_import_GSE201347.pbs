@@ -23,6 +23,9 @@ cd "${PROJECT_ROOT}"
 
 echo "Job started: $(date)"
 echo "Node: $(hostname)"
+echo "Conda env: ${CONDA_DEFAULT_ENV}"
+echo "Rscript path: $(which Rscript)"
+Rscript -e 'cat("Seurat:", as.character(packageVersion("Seurat")), "\n"); cat("SeuratObject:", as.character(packageVersion("SeuratObject")), "\n")'
 echo "Script: ${SCRIPT}"
 echo "Config: ${CONFIG}"
 echo "========================================="

@@ -71,3 +71,41 @@ qc_max_features <- 7000
 qc_min_counts   <- 1000
 qc_max_percent_mt <- 20
 remove_doublets <- TRUE
+
+# ---- Samples to exclude (biological criteria) ----
+samples_to_exclude_bio <- c("GSM5004184_LN1", "GSM5004185_LN2", "GSM5004187_P1", "GSM5004188_Li1", "GSM5004189_Li2")  # metástases
+
+# ---- Samples to exclude (after QC) ----
+samples_to_exclude_qc <- c("GSM5004186_O1") #%MT
+
+#### Script 05_merge
+
+# ---- Merged object output ----
+merged_seurat_path <- file.path(processed_base_dir, "merged", paste0(dataset_id, "_merged.rds"))
+
+#### Script 06_normalize_hvg
+
+# ---- Normalization parameters ----
+norm_method   <- "RC"       # RC = Relative Counts (CPM without log)
+scale_factor  <- 10000
+
+# ---- Highly Variable Genes ----
+hvg_method    <- "vst"
+n_hvg         <- 2000
+
+# ---- Normalized object output ----
+norm_seurat_path <- file.path(processed_base_dir, "normalized", paste0(dataset_id, "_norm_hvg.rds"))
+
+#### Script 07_dimred_clustering
+
+# ---- PCA ----
+n_pcs <- 50
+
+# ---- Neighbors / Clustering / UMAP ----
+dims_to_use         <- 1:18
+cluster_algorithm   <- 4           # 4 = Leiden
+cluster_resolutions <- c(0.25, 0.5, 1.0)
+
+# ---- Clustered object output ----
+clustered_seurat_path <- file.path(processed_base_dir, "clustered", paste0(dataset_id, "_clustered.rds"))
+

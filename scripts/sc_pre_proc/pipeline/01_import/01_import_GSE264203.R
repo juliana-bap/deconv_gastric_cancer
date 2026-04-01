@@ -71,14 +71,45 @@ if (is_ensembl(rownames(counts))) {
   counts <- convert_to_ensembl(counts, mapping_table)
 }
 
-cat("Final dimension (Ensembl):", dim(counts), "\n")
+cat("Total dimension (Ensembl):", dim(counts), "\n")
 
-# ---- Output ----
+# ---- Split by barcode suffix ----
+suffixes <- sub(".*-", "", colnames(counts))
+unique_suffixes <- sort(unique(suffixes))
+cat("Barcode suffixes found:", length(unique_suffixes), "\n")
+
+# ---- Output directory ----
 dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
 
-outfile <- file.path(input_dir, paste0(dataset_id, ".rds"))
-saveRDS(counts, outfile)
-cat("Saved:", outfile, "\n")
+# ---- Map suffixes to sample names (from config, if available) ----
+# suffix_to_sample allows renaming: c("1"="GC1", "2"="GC2", ...)
+# If NULL, uses generic names: GSE264203_sample_1, GSE264203_sample_2, ...
+
+for (s in unique_suffixes) {
+
+  cat("\n=============================\n")
+
+  if (!is.null(suffix_to_sample) && s %in% names(suffix_to_sample)) {
+    sample_name <- suffix_to_sample[[s]]
+  } else {
+    sample_name <- paste0(dataset_id, "_sample_", s)
+  }
+
+  cat("Suffix -", s, "->", sample_name, "\n")
+
+  cells <- colnames(counts)[suffixes == s]
+  mat <- counts[, cells]
+
+  cat("Dimension:", dim(mat), "\n")
+  cat("Final dimension (Ensembl):", dim(mat), "\n")
+
+  outfile <- file.path(input_dir, paste0(sample_name, ".rds"))
+  saveRDS(mat, outfile)
+  cat("Saved:", outfile, "\n")
+
+  rm(mat)
+  gc()
+}
 
 rm(counts)
 gc()
