@@ -123,3 +123,13 @@ rogue_downsample  <- NULL         # NULL = use all cells; set integer (e.g. 1000
 # ---- ROGUE output ----
 rogue_output_dir <- file.path(processed_base_dir, "rogue")
 
+#### Scripts 09a/09b/09c - Pre-annotation
+
+# ---- Annotation parameters ----
+annotation_resolution <- 0.5      # same resolution used for ROGUE
+
+# ---- Annotation output ----
+annotation_output_dir  <- file.path(processed_base_dir, "annotation")
+annotated_seurat_path  <- file.path(annotation_output_dir, paste0(dataset_id, "_annotated.rds"))
+h5ad_path              <- file.path(annotation_output_dir, paste0(dataset_id, "_for_celltypist.h5ad"))
+

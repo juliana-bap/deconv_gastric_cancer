@@ -1,0 +1,304 @@
+---
+title: "Pre-Annotation Exploration - GSE163558"
+author: "Juliana Pinto"
+format: html
+editor: visual
+---
+
+## Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(dplyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+source("~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs/config_GSE163558.R")
+```
+
+```{r helper-function}
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    gene_meta <- seu[["RNA"]]@meta.data
+    symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+    labels <- symbol_lookup[ensembl_ids]
+    labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
+    return(unname(labels))
+  }
+  return(ensembl_ids)
+}
+```
+
+## 1. Load annotated object
+
+```{r load-object}
+seu <- readRDS(annotated_seurat_path)
+
+cat("Dataset:", dataset_id, "\n")
+cat("Dimensions:", nrow(seu), "genes x", ncol(seu), "cells\n")
+cat("Samples:", length(unique(seu$orig.ident)), "\n")
+
+# Check which annotations are available
+annot_cols <- grep("singler|celltypist", colnames(seu@meta.data), value = TRUE)
+cat("Annotation columns:", paste(annot_cols, collapse = ", "), "\n")
+```
+
+## 2. UMAP - All annotations
+
+```{r umap-all, fig.width=20, fig.height=16}
+annotation_cluster_col <- paste0("RNA_snn_res.", annotation_resolution)
+
+p1 <- DimPlot(seu, group.by = annotation_cluster_col, label = TRUE) +
+  ggtitle(paste("Clusters (res", annotation_resolution, ")")) + NoLegend()
+
+plots <- list(p1)
+
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  plots[["hpca"]] <- DimPlot(seu, group.by = "singler_hpca", label = TRUE, repel = TRUE) +
+    ggtitle("SingleR - HPCA") + NoLegend()
+}
+
+if ("singler_blueprint" %in% colnames(seu@meta.data)) {
+  plots[["bp"]] <- DimPlot(seu, group.by = "singler_blueprint", label = TRUE, repel = TRUE) +
+    ggtitle("SingleR - Blueprint") + NoLegend()
+}
+
+if ("celltypist_label" %in% colnames(seu@meta.data)) {
+  plots[["ct"]] <- DimPlot(seu, group.by = "celltypist_label", label = TRUE, repel = TRUE) +
+    ggtitle("CellTypist") + NoLegend()
+}
+
+wrap_plots(plots, ncol = 2)
+```
+
+## 3. Annotation counts
+
+```{r annotation-counts}
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  cat("--- SingleR HPCA ---\n")
+  print(sort(table(seu$singler_hpca), decreasing = TRUE))
+  cat("\n")
+}
+
+if ("singler_blueprint" %in% colnames(seu@meta.data)) {
+  cat("--- SingleR Blueprint ---\n")
+  print(sort(table(seu$singler_blueprint), decreasing = TRUE))
+  cat("\n")
+}
+
+if ("celltypist_label" %in% colnames(seu@meta.data)) {
+  cat("--- CellTypist ---\n")
+  print(sort(table(seu$celltypist_label), decreasing = TRUE))
+}
+```
+
+## 4. CellTypist confidence scores
+
+```{r celltypist-confidence, fig.width=10, fig.height=10}
+if ("celltypist_conf_score" %in% colnames(seu@meta.data)) {
+  p1 <- FeaturePlot(seu, features = "celltypist_conf_score", order = TRUE) +
+    scale_color_gradient(low = "red", high = "steelblue", name = "Score") +
+    ggtitle("CellTypist confidence on UMAP")
+
+  p2 <- ggplot(seu@meta.data, aes(x = celltypist_conf_score)) +
+    geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+    geom_vline(xintercept = 0.5, linetype = "dashed", color = "red") +
+    ggtitle("CellTypist confidence distribution") +
+    xlab("Confidence score") + ylab("Cells")
+
+  p1 / p2
+}
+```
+
+```{r low-confidence}
+if ("celltypist_conf_score" %in% colnames(seu@meta.data)) {
+  low_conf <- sum(seu$celltypist_conf_score < 0.5, na.rm = TRUE)
+  cat("Cells with confidence < 0.5:", low_conf, "(", round(100 * low_conf / ncol(seu), 1), "%)\n")
+
+  # Which labels have lowest confidence?
+  conf_by_label <- seu@meta.data %>%
+    group_by(celltypist_label) %>%
+    summarise(
+      n = n(),
+      mean_conf = round(mean(celltypist_conf_score, na.rm = TRUE), 3),
+      pct_low = round(sum(celltypist_conf_score < 0.5, na.rm = TRUE) / n() * 100, 1),
+      .groups = "drop"
+    ) %>%
+    arrange(mean_conf)
+
+  knitr::kable(conf_by_label, caption = "CellTypist confidence by label")
+}
+```
+
+## 5. Cluster-level consensus
+
+```{r cluster-consensus}
+annotation_cluster_col <- paste0("RNA_snn_res.", annotation_resolution)
+
+consensus <- seu@meta.data %>%
+  group_by(across(all_of(annotation_cluster_col))) %>%
+  summarise(
+    n_cells = n(),
+    hpca = if ("singler_hpca" %in% colnames(seu@meta.data))
+      names(sort(table(singler_hpca), decreasing = TRUE))[1] else NA,
+    hpca_pct = if ("singler_hpca" %in% colnames(seu@meta.data))
+      round(max(table(singler_hpca)) / n() * 100, 1) else NA,
+    blueprint = if ("singler_blueprint" %in% colnames(seu@meta.data))
+      names(sort(table(singler_blueprint), decreasing = TRUE))[1] else NA,
+    blueprint_pct = if ("singler_blueprint" %in% colnames(seu@meta.data))
+      round(max(table(singler_blueprint)) / n() * 100, 1) else NA,
+    celltypist = if ("celltypist_label" %in% colnames(seu@meta.data))
+      names(sort(table(celltypist_label), decreasing = TRUE))[1] else NA,
+    celltypist_pct = if ("celltypist_label" %in% colnames(seu@meta.data))
+      round(max(table(celltypist_label)) / n() * 100, 1) else NA,
+    .groups = "drop"
+  )
+
+knitr::kable(consensus, caption = "Dominant annotation per cluster (% agreement)")
+```
+
+## 6. Confusion matrices
+
+### SingleR HPCA vs Clusters
+
+```{r confusion-hpca, fig.width=14, fig.height=8}
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  ct <- table(
+    Cluster = seu@meta.data[[annotation_cluster_col]],
+    HPCA = seu$singler_hpca
+  )
+  ct_prop <- prop.table(ct, margin = 1) * 100
+
+  pheatmap(
+    ct_prop,
+    fontsize = 7,
+    display_numbers = TRUE,
+    number_format = "%.0f",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = colorRampPalette(c("white", "steelblue"))(100),
+    main = "Cluster vs SingleR-HPCA (%)"
+  )
+}
+```
+
+### SingleR Blueprint vs Clusters
+
+```{r confusion-blueprint, fig.width=14, fig.height=8}
+if ("singler_blueprint" %in% colnames(seu@meta.data)) {
+  ct <- table(
+    Cluster = seu@meta.data[[annotation_cluster_col]],
+    Blueprint = seu$singler_blueprint
+  )
+  ct_prop <- prop.table(ct, margin = 1) * 100
+
+  pheatmap(
+    ct_prop,
+    fontsize = 7,
+    display_numbers = TRUE,
+    number_format = "%.0f",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = colorRampPalette(c("white", "steelblue"))(100),
+    main = "Cluster vs SingleR-Blueprint (%)"
+  )
+}
+```
+
+### CellTypist vs SingleR HPCA
+
+```{r confusion-ct-hpca, fig.width=16, fig.height=10}
+if (all(c("celltypist_label", "singler_hpca") %in% colnames(seu@meta.data))) {
+  ct <- table(
+    CellTypist = seu$celltypist_label,
+    HPCA = seu$singler_hpca
+  )
+  ct_prop <- prop.table(ct, margin = 1) * 100
+
+  pheatmap(
+    ct_prop,
+    fontsize = 6,
+    display_numbers = TRUE,
+    number_format = "%.0f",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = colorRampPalette(c("white", "steelblue"))(100),
+    main = "CellTypist vs SingleR-HPCA (%)"
+  )
+}
+```
+
+### CellTypist vs SingleR Blueprint
+
+```{r confusion-ct-bp, fig.width=16, fig.height=10}
+if (all(c("celltypist_label", "singler_blueprint") %in% colnames(seu@meta.data))) {
+  ct <- table(
+    CellTypist = seu$celltypist_label,
+    Blueprint = seu$singler_blueprint
+  )
+  ct_prop <- prop.table(ct, margin = 1) * 100
+
+  pheatmap(
+    ct_prop,
+    fontsize = 6,
+    display_numbers = TRUE,
+    number_format = "%.0f",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = colorRampPalette(c("white", "steelblue"))(100),
+    main = "CellTypist vs SingleR-Blueprint (%)"
+  )
+}
+```
+
+## 7. By sample
+
+```{r annotation-by-sample, fig.width=14, fig.height=6}
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  df <- seu@meta.data %>%
+    group_by(orig.ident, singler_hpca) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(orig.ident) %>%
+    mutate(pct = n / sum(n) * 100)
+
+  ggplot(df, aes(x = orig.ident, y = pct, fill = singler_hpca)) +
+    geom_col() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    ggtitle("Cell type composition per sample (SingleR-HPCA)") +
+    ylab("% cells") + xlab(NULL)
+}
+```
+
+## 8. Summary
+
+```{r summary}
+cat("Dataset:", dataset_id, "\n")
+cat("Cells:", ncol(seu), "\n")
+cat("Resolution:", annotation_resolution, "\n")
+cat("Annotations available:", paste(annot_cols, collapse = ", "), "\n")
+
+if ("singler_hpca" %in% colnames(seu@meta.data))
+  cat("SingleR HPCA labels:", length(unique(seu$singler_hpca)), "\n")
+if ("singler_blueprint" %in% colnames(seu@meta.data))
+  cat("SingleR Blueprint labels:", length(unique(seu$singler_blueprint)), "\n")
+if ("celltypist_label" %in% colnames(seu@meta.data)) {
+  cat("CellTypist labels:", length(unique(na.omit(seu$celltypist_label))), "\n")
+  cat("CellTypist mean confidence:", round(mean(seu$celltypist_conf_score, na.rm = TRUE), 3), "\n")
+}
+```
+
+## 9. Conclusions
+
+Notes:
+
+-   **Agreement**: Where do all three methods agree? Those are high-confidence cell type assignments.
+-   **Disagreements**: Where they disagree, which method seems more plausible given the known markers?
+-   **CellTypist confidence**: Cells with \< 0.5 confidence may be misclassified or represent transitional states.
+-   **Batch effect**: Do annotations vary by sample? This indicates batch effect still present (expected pre-integration).
+-   **Epithelial cells**: CellTypist (immune-focused model) may struggle with epithelial cells. SingleR with HPCA is better for these.
+-   **Reminder**: This is pre-annotation. Final annotation will be done on the integrated object.
