@@ -114,3 +114,12 @@ cluster_resolutions <- c(0.25, 0.5, 1.0)
 # ---- Clustered object output ----
 clustered_seurat_path <- file.path(processed_base_dir, "clustered", paste0(dataset_id, "_clustered.rds"))
 
+#### Script 08_rogue
+
+# ---- ROGUE parameters ----
+rogue_resolution  <- 0.5          # resolution to evaluate
+rogue_downsample  <- NULL         # NULL = use all cells; set integer (e.g. 1000) for large datasets
+
+# ---- ROGUE output ----
+rogue_output_dir <- file.path(processed_base_dir, "rogue")
+
