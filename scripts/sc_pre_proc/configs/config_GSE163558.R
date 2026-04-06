@@ -96,10 +96,15 @@ n_hvg         <- 2000
 # ---- Normalized object output ----
 norm_seurat_path <- file.path(processed_base_dir, "normalized", paste0(dataset_id, "_norm_hvg.rds"))
 
-#### Script 07_dimred_clustering
+#### Script 07a_dimred
 
 # ---- PCA ----
 n_pcs <- 50
+
+# ---- PCA object output ----
+pca_seurat_path <- file.path(processed_base_dir, "pca", paste0(dataset_id, "_pca.rds"))
+
+#### Script 07b_clustering
 
 # ---- Neighbors / Clustering / UMAP ----
 dims_to_use         <- 1:18

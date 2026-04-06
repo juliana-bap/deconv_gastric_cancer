@@ -73,12 +73,15 @@ top10 <- head(VariableFeatures(seu), 10)
 top20 <- head(VariableFeatures(seu), 20)
 
 # Map Ensembl IDs to gene symbols for display
+# Note: feature metadata rownames are numeric, so use named vector lookup
 if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
   gene_meta <- seu[["RNA"]]@meta.data
-  top10_symbols <- gene_meta[top10, "gene_symbol"]
+  symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+
+  top10_symbols <- symbol_lookup[top10]
   top10_symbols[is.na(top10_symbols) | top10_symbols == ""] <- top10[is.na(top10_symbols) | top10_symbols == ""]
 
-  top20_symbols <- gene_meta[top20, "gene_symbol"]
+  top20_symbols <- symbol_lookup[top20]
   top20_symbols[is.na(top20_symbols) | top20_symbols == ""] <- top20[is.na(top20_symbols) | top20_symbols == ""]
 
   cat("\nTop 10 HVGs (symbol - Ensembl):\n")

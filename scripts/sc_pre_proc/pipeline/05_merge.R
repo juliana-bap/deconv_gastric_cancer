@@ -121,15 +121,35 @@ ens_to_symbol <- setNames(
   mapping_table$ensembl_gene_id
 )
 
+# Supplement with known immunoglobulin genes missing from Ensembl mapping
+ig_supplement <- c(
+  "ENSG00000211890" = "IGHG3",   "ENSG00000211897" = "IGHG1",
+  "ENSG00000211892" = "IGHG4",   "ENSG00000211896" = "IGHG2",
+  "ENSG00000211899" = "IGHM",    "ENSG00000211893" = "IGHA2",
+  "ENSG00000211895" = "IGHA1",   "ENSG00000211891" = "IGHD",
+  "ENSG00000211898" = "IGHE",    "ENSG00000211651" = "IGKV1-5",
+  "ENSG00000239951" = "JCHAIN",  "ENSG00000275385" = "IGHGP",
+  "ENSG00000211677" = "IGLC2",   "ENSG00000211679" = "IGLC3",
+  "ENSG00000211662" = "IGLV3-21","ENSG00000211598" = "IGKV4-1",
+  "ENSG00000254709" = "IGLL5"
+)
+
+# Only add if not already in mapping
+new_ig <- ig_supplement[!names(ig_supplement) %in% names(ens_to_symbol) |
+                         ens_to_symbol[names(ig_supplement)] == ""]
+ens_to_symbol[names(new_ig)] <- new_ig
+
 gene_symbols <- ens_to_symbol[rownames(merged_seurat)]
 gene_symbols[is.na(gene_symbols)] <- ""
 merged_seurat[["RNA"]]@meta.data$gene_symbol <- gene_symbols
 
 n_mapped <- sum(gene_symbols != "")
+n_ig <- sum(rownames(merged_seurat) %in% names(ig_supplement))
 cat("Gene symbols mapped:", n_mapped, "/", nrow(merged_seurat), "\n")
+cat("  (including", n_ig, "supplemented IG genes)\n")
 cat("Unmapped (Ensembl only):", nrow(merged_seurat) - n_mapped, "\n")
 
-rm(mapping_table, ens_to_symbol)
+rm(mapping_table, ens_to_symbol, ig_supplement, new_ig)
 
 # ---- Verify metadata ----
 cat("\nMetadata columns:", paste(colnames(merged_seurat@meta.data), collapse = ", "), "\n")

@@ -22,13 +22,16 @@ source("~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs/config_GSE
 ```{r helper-function}
 # Helper: map Ensembl IDs to gene symbols
 # Returns symbol if available, otherwise keeps Ensembl ID
+# Uses named vector lookup (feature metadata rownames are numeric, not Ensembl)
 ens_to_label <- function(ensembl_ids, seu) {
   if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
     gene_meta <- seu[["RNA"]]@meta.data
-    labels <- gene_meta[ensembl_ids, "gene_symbol"]
+    # Build named vector: Ensembl ID -> gene symbol
+    symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+    labels <- symbol_lookup[ensembl_ids]
     # Use Ensembl ID if symbol is NA or empty
     labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
-    return(labels)
+    return(unname(labels))
   }
   return(ensembl_ids)
 }
