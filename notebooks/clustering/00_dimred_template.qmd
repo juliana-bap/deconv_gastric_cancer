@@ -1,0 +1,135 @@
+---
+title: "Dimensionality Reduction Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 9, fig.height = 6
+)
+```
+
+# Dimensionality Reduction: `r params$dataset_id`
+
+Inspects the output of `07a_dimred.R` (PCA only) so that an informed number of PCs can be set in the config before running `07b_clustering.R`.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r helper}
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    gene_meta <- seu[["RNA"]]@meta.data
+    symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+    labels <- symbol_lookup[ensembl_ids]
+    labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
+    return(unname(labels))
+  }
+  ensembl_ids
+}
+```
+
+```{r load-pca}
+seu <- readRDS(pca_seurat_path)
+cat("Cells:", ncol(seu), " Genes:", nrow(seu), "\n")
+cat("Available reductions:", paste(Reductions(seu), collapse = ", "), "\n")
+```
+
+## 1. ElbowPlot
+
+```{r elbow}
+ElbowPlot(seu, ndims = 50) +
+  ggtitle(paste("Elbow Plot -", params$dataset_id))
+```
+
+## 2. Cumulative variance
+
+```{r cumvar}
+stdev <- seu[["pca"]]@stdev
+var_explained <- (stdev^2) / sum(stdev^2) * 100
+cum_var <- cumsum(var_explained)
+
+df <- data.frame(PC = seq_along(stdev), var = var_explained, cum = cum_var)
+
+p1 <- ggplot(df, aes(x = PC, y = var)) +
+  geom_col(fill = "steelblue") +
+  ggtitle("% Variance per PC") + ylab("% variance")
+
+p2 <- ggplot(df, aes(x = PC, y = cum)) +
+  geom_line() + geom_point(size = 0.8) +
+  geom_hline(yintercept = c(50, 75, 90), linetype = "dashed", color = "red") +
+  ggtitle("Cumulative variance") + ylab("Cumulative %")
+
+p1 + p2
+```
+
+```{r pc-recommendations}
+n_pc_50 <- which(cum_var >= 50)[1]
+n_pc_75 <- which(cum_var >= 75)[1]
+n_pc_90 <- which(cum_var >= 90)[1]
+cat("PCs needed for 50% variance:", n_pc_50, "\n")
+cat("PCs needed for 75% variance:", n_pc_75, "\n")
+cat("PCs needed for 90% variance:", n_pc_90, "\n")
+```
+
+## 3. Top loadings (with gene symbols)
+
+```{r loadings, fig.height=12}
+loadings <- Loadings(seu, reduction = "pca")
+top_n <- 10
+n_pcs_show <- 6
+
+top_loadings <- lapply(1:n_pcs_show, function(i) {
+  pc <- loadings[, i]
+  top <- sort(abs(pc), decreasing = TRUE)[1:top_n]
+  data.frame(
+    PC     = paste0("PC", i),
+    gene   = names(top),
+    symbol = ens_to_label(names(top), seu),
+    loading = pc[names(top)]
+  )
+})
+top_loadings_df <- do.call(rbind, top_loadings)
+
+ggplot(top_loadings_df, aes(x = reorder(symbol, loading), y = loading)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  facet_wrap(~ PC, scales = "free", ncol = 2) +
+  xlab(NULL) + ylab("Loading") +
+  ggtitle("Top loadings (gene symbols)")
+```
+
+## 4. Notes / decisions
+
+- Number of PCs to use in `07b_clustering.R`:
+- Biologically meaningful PCs (top loadings):
+- PCs dominated by technical noise / single genes:
+
+---
+
+*Render: `quarto render 00_dimred_template.qmd -P dataset_id:GSExxxxxx --output dimred_exploration_GSExxxxxx.html`*

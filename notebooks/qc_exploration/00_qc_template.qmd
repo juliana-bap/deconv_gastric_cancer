@@ -1,0 +1,157 @@
+---
+title: "QC Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+```
+
+# QC Exploration: `r params$dataset_id`
+
+This notebook explores the QC metrics computed by `03_qc_metrics.R` for the `r params$dataset_id` dataset, before filtering. The aim is to choose informed thresholds for `04_qc_filtering.R`.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r load-objects}
+qc_files <- list.files(
+  seurat_qc_metrics_dir,
+  pattern = "_seurat_qc_metrics.rds$",
+  full.names = TRUE
+)
+sample_names <- gsub("_seurat_qc_metrics.rds", "", basename(qc_files))
+seu_list <- setNames(lapply(qc_files, readRDS), sample_names)
+
+cat("Samples loaded:", length(seu_list), "\n")
+cat("Names:", paste(names(seu_list), collapse = ", "), "\n")
+```
+
+## 1. Per-sample summary
+
+```{r summary-table}
+qc_summary <- do.call(rbind, lapply(names(seu_list), function(s) {
+  seu <- seu_list[[s]]
+  data.frame(
+    sample          = s,
+    cells           = ncol(seu),
+    median_features = median(seu$nFeature_RNA),
+    median_counts   = median(seu$nCount_RNA),
+    median_mt       = round(median(seu$percent.mt), 2),
+    median_ribo     = round(median(seu$percent.ribo), 2),
+    median_hb       = round(median(seu$percent.hb), 2),
+    pct_doublets    = if ("scDblFinder.class" %in% colnames(seu@meta.data))
+      round(100 * mean(seu$scDblFinder.class == "doublet"), 1) else NA
+  )
+}))
+
+knitr::kable(qc_summary, caption = paste("QC summary -", params$dataset_id))
+cat("Total cells:", sum(qc_summary$cells), "\n")
+```
+
+## 2. Combined metadata
+
+```{r combined-meta}
+combined_meta <- do.call(rbind, lapply(names(seu_list), function(s) {
+  df <- seu_list[[s]]@meta.data
+  df$sample <- s
+  df
+}))
+```
+
+## 3. Comparative violin plots
+
+```{r violins, fig.height=8}
+metrics <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo", "percent.hb")
+
+plots <- lapply(metrics, function(m) {
+  ggplot(combined_meta, aes(x = sample, y = .data[[m]], fill = sample)) +
+    geom_violin(scale = "width") +
+    geom_boxplot(width = 0.1, fill = "white", outlier.size = 0.3) +
+    ggtitle(m) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
+})
+
+wrap_plots(plots, ncol = 2)
+```
+
+## 4. Distributions and candidate thresholds
+
+```{r distributions, fig.height=8}
+p1 <- ggplot(combined_meta, aes(x = nFeature_RNA, fill = sample)) +
+  geom_density(alpha = 0.4) + scale_x_log10() +
+  ggtitle("nFeature_RNA (log10)")
+
+p2 <- ggplot(combined_meta, aes(x = nCount_RNA, fill = sample)) +
+  geom_density(alpha = 0.4) + scale_x_log10() +
+  ggtitle("nCount_RNA (log10)")
+
+p3 <- ggplot(combined_meta, aes(x = percent.mt, fill = sample)) +
+  geom_density(alpha = 0.4) +
+  geom_vline(xintercept = 20, linetype = "dashed", color = "red") +
+  ggtitle("% mitochondrial")
+
+p4 <- ggplot(combined_meta, aes(x = percent.ribo, fill = sample)) +
+  geom_density(alpha = 0.4) +
+  ggtitle("% ribosomal")
+
+(p1 + p2) / (p3 + p4)
+```
+
+## 5. Doublets
+
+```{r doublets}
+if ("scDblFinder.class" %in% colnames(combined_meta)) {
+  doublet_table <- combined_meta %>%
+    group_by(sample, scDblFinder.class) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = scDblFinder.class, values_from = n, values_fill = 0)
+  knitr::kable(doublet_table, caption = "Doublet calls per sample")
+}
+```
+
+## 6. Notes / decisions
+
+- Suggested cutoffs to set in the config:
+  - `min_features`:
+  - `max_features`:
+  - `max_percent_mt`:
+- Samples needing special attention:
+- Doublet removal strategy:
+
+---
+
+*Template — duplicate and rename to `QC_exploration_<DATASET>.qmd` per dataset, or render parametrically:*
+*`quarto render 00_qc_template.qmd -P dataset_id:GSExxxxxx --output QC_exploration_GSExxxxxx.html`*

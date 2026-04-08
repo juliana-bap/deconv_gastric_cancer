@@ -1,0 +1,169 @@
+---
+title: "Clustering Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+  resolution: 0.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+# Clustering: `r params$dataset_id`
+
+Inspects the output of `07b_clustering.R`: UMAP, clusters, per-sample composition, QC per cluster, and known marker genes.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r helper}
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    gene_meta <- seu[["RNA"]]@meta.data
+    symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+    labels <- symbol_lookup[ensembl_ids]
+    labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
+    return(unname(labels))
+  }
+  ensembl_ids
+}
+
+# Looks up an Ensembl ID from a gene symbol
+symbol_to_ens <- function(symbol, seu) {
+  gene_meta <- seu[["RNA"]]@meta.data
+  hits <- rownames(seu)[!is.na(gene_meta$gene_symbol) &
+                        gene_meta$gene_symbol == symbol]
+  if (length(hits) == 0) return(NA_character_)
+  hits[1]
+}
+
+feature_plot_labeled <- function(seu, symbols) {
+  ens_ids <- vapply(symbols, symbol_to_ens, character(1), seu = seu)
+  valid <- !is.na(ens_ids)
+  if (!any(valid)) return(NULL)
+  p <- FeaturePlot(seu, features = ens_ids[valid], order = TRUE,
+                   combine = FALSE)
+  for (i in seq_along(p)) {
+    p[[i]] <- p[[i]] + ggtitle(symbols[valid][i])
+  }
+  wrap_plots(p)
+}
+```
+
+```{r load-clustered}
+seu <- readRDS(clustered_seurat_path)
+cluster_col <- paste0("RNA_snn_res.", params$resolution)
+Idents(seu) <- cluster_col
+
+cat("Cells:", ncol(seu), "\n")
+cat("Clusters at res", params$resolution, ":",
+    length(unique(seu@meta.data[[cluster_col]])), "\n")
+cat("Samples:", paste(unique(seu$orig.ident), collapse = ", "), "\n")
+```
+
+## 1. UMAP
+
+```{r umap}
+p1 <- DimPlot(seu, group.by = cluster_col, label = TRUE) +
+  ggtitle(paste("Clusters (res", params$resolution, ")")) + NoLegend()
+p2 <- DimPlot(seu, group.by = "orig.ident") +
+  ggtitle("Sample")
+p1 + p2
+```
+
+## 2. Resolutions overview
+
+```{r umap-multi-res, fig.height=10}
+res_cols <- grep("^RNA_snn_res", colnames(seu@meta.data), value = TRUE)
+plots <- lapply(res_cols, function(rc) {
+  DimPlot(seu, group.by = rc, label = TRUE) +
+    ggtitle(rc) + NoLegend()
+})
+wrap_plots(plots, ncol = 2)
+```
+
+## 3. Composition per sample
+
+```{r composition}
+df <- seu@meta.data %>%
+  group_by(orig.ident, .data[[cluster_col]]) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(orig.ident) %>% mutate(pct = n / sum(n) * 100)
+
+ggplot(df, aes(x = orig.ident, y = pct, fill = .data[[cluster_col]])) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Cluster composition per sample") +
+  ylab("% cells") + xlab(NULL)
+```
+
+## 4. QC per cluster
+
+```{r qc-per-cluster, fig.height=8}
+metrics <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo")
+plots <- lapply(metrics, function(m) {
+  VlnPlot(seu, features = m, group.by = cluster_col, pt.size = 0) +
+    NoLegend() + ggtitle(m)
+})
+wrap_plots(plots, ncol = 2)
+```
+
+## 5. Known markers (edit per dataset)
+
+```{r markers-epithelial}
+feature_plot_labeled(seu, c("EPCAM", "KRT8", "KRT18"))
+```
+
+```{r markers-tcell}
+feature_plot_labeled(seu, c("CD3D", "CD3E", "CD8A", "CD4"))
+```
+
+```{r markers-bcell}
+feature_plot_labeled(seu, c("CD79A", "MS4A1", "JCHAIN"))
+```
+
+```{r markers-myeloid}
+feature_plot_labeled(seu, c("LYZ", "CD68", "S100A8", "S100A9"))
+```
+
+```{r markers-fibroblast-endothelial}
+feature_plot_labeled(seu, c("COL1A1", "DCN", "PECAM1", "VWF"))
+```
+
+## 6. Notes / decisions
+
+- Working resolution:
+- Clusters that look biologically distinct:
+- Clusters that may need merging / splitting:
+- Suspect clusters (low QC, doublets, mixed markers):
+
+---
+
+*Render: `quarto render 00_clustering_template.qmd -P dataset_id:GSExxxxxx -P resolution:0.5 --output clustering_exploration_GSExxxxxx.html`*

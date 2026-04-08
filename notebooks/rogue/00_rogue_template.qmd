@@ -1,0 +1,131 @@
+---
+title: "ROGUE Cluster Purity Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+  resolution: 0.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+# ROGUE: `r params$dataset_id`
+
+Inspects the output of `08_rogue.R`. ROGUE measures cluster purity (1 = pure, < 0.5 = mixed). Used to detect clusters that may need re-clustering or that are biologically heterogeneous.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(pheatmap)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r load-data}
+seu <- readRDS(clustered_seurat_path)
+cluster_col <- paste0("RNA_snn_res.", params$resolution)
+Idents(seu) <- cluster_col
+
+rogue_csv <- file.path(rogue_output_dir,
+                       paste0(params$dataset_id, "_rogue_scores.csv"))
+rogue_df  <- read.csv(rogue_csv, row.names = 1, check.names = FALSE)
+
+cat("ROGUE matrix:", nrow(rogue_df), "samples x", ncol(rogue_df), "clusters\n")
+```
+
+## 1. Score table (long format)
+
+```{r long-table}
+long <- rogue_df %>%
+  tibble::rownames_to_column("sample") %>%
+  tidyr::pivot_longer(-sample, names_to = "cluster", values_to = "rogue") %>%
+  mutate(cluster = sub("^X", "", cluster))
+
+knitr::kable(
+  long %>% arrange(rogue) %>% head(20),
+  caption = "20 lowest-purity (cluster, sample) combinations"
+)
+```
+
+## 2. Boxplot per cluster
+
+```{r boxplot}
+ggplot(long, aes(x = cluster, y = rogue)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.5) +
+  geom_jitter(width = 0.15, size = 1) +
+  geom_hline(yintercept = c(0.5, 0.8), linetype = "dashed", color = "red") +
+  ylim(0, 1) +
+  ggtitle("ROGUE per cluster (across samples)") +
+  ylab("ROGUE") + xlab("Cluster")
+```
+
+## 3. Heatmap (cluster × sample)
+
+```{r heatmap}
+mat <- as.matrix(rogue_df)
+mat[is.na(mat)] <- 0
+pheatmap(
+  mat,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = TRUE, number_format = "%.2f",
+  color = colorRampPalette(c("red", "white", "steelblue"))(100),
+  main = "ROGUE (cluster x sample)"
+)
+```
+
+## 4. ROGUE on UMAP
+
+```{r umap-rogue}
+mean_rogue <- colMeans(rogue_df, na.rm = TRUE)
+names(mean_rogue) <- sub("^X", "", names(mean_rogue))
+
+cluster_levels <- as.character(seu@meta.data[[cluster_col]])
+seu$rogue_score <- unname(mean_rogue[cluster_levels])
+
+FeaturePlot(seu, features = "rogue_score", order = TRUE) +
+  scale_color_gradient(low = "red", high = "steelblue", name = "ROGUE") +
+  ggtitle("Mean ROGUE per cluster on UMAP")
+```
+
+## 5. Low-purity investigation
+
+```{r low-purity}
+low_clusters <- names(mean_rogue)[mean_rogue < 0.6]
+cat("Clusters with mean ROGUE < 0.6:",
+    if (length(low_clusters)) paste(low_clusters, collapse = ", ") else "none",
+    "\n")
+```
+
+## 6. Notes / decisions
+
+- Pure clusters (ROGUE > 0.8):
+- Moderate clusters (0.5–0.8):
+- Mixed clusters needing attention:
+- Re-cluster / merge candidates:
+
+---
+
+*Render: `quarto render 00_rogue_template.qmd -P dataset_id:GSExxxxxx -P resolution:0.5 --output rogue_exploration_GSExxxxxx.html`*

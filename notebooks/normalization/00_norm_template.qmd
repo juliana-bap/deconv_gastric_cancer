@@ -1,0 +1,117 @@
+---
+title: "Normalization & HVG Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 9, fig.height = 6
+)
+```
+
+# Normalization: `r params$dataset_id`
+
+Inspects the output of `06_normalize_hvg.R`: normalization quality, HVG selection, and a top-HVG sanity check with gene symbols.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r helper}
+# Map Ensembl IDs to gene symbols using the feature metadata
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    gene_meta <- seu[["RNA"]]@meta.data
+    symbol_lookup <- setNames(gene_meta$gene_symbol, rownames(seu))
+    labels <- symbol_lookup[ensembl_ids]
+    labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
+    return(unname(labels))
+  }
+  ensembl_ids
+}
+```
+
+```{r load-objects}
+seu_merged <- readRDS(merged_seurat_path)
+seu_norm   <- readRDS(norm_seurat_path)
+
+cat("Merged:    ", ncol(seu_merged), "cells x", nrow(seu_merged), "genes\n")
+cat("Normalized:", ncol(seu_norm),   "cells x", nrow(seu_norm),   "genes\n")
+cat("HVGs:      ", length(VariableFeatures(seu_norm)), "\n")
+```
+
+## 1. Counts vs normalized values per cell
+
+```{r count-distributions}
+df <- data.frame(
+  total_counts = colSums(LayerData(seu_merged, layer = "counts")),
+  norm_counts  = colSums(LayerData(seu_norm,   layer = "data"))
+)
+
+p1 <- ggplot(df, aes(x = total_counts)) +
+  geom_histogram(bins = 60, fill = "steelblue") + scale_x_log10() +
+  ggtitle("Raw counts per cell (log10)")
+
+p2 <- ggplot(df, aes(x = norm_counts)) +
+  geom_histogram(bins = 60, fill = "darkorange") +
+  ggtitle("Normalized values per cell")
+
+p1 + p2
+```
+
+## 2. Mean-variance / HVG plot
+
+```{r hvg-plot}
+top10 <- head(VariableFeatures(seu_norm), 10)
+top10_labels <- ens_to_label(top10, seu_norm)
+
+vfp <- VariableFeaturePlot(seu_norm)
+LabelPoints(plot = vfp, points = top10, labels = top10_labels, repel = TRUE)
+```
+
+## 3. Top HVGs (with gene symbols)
+
+```{r top-hvgs}
+hvgs <- VariableFeatures(seu_norm)
+hvg_table <- data.frame(
+  rank   = seq_along(head(hvgs, 30)),
+  ens_id = head(hvgs, 30),
+  symbol = ens_to_label(head(hvgs, 30), seu_norm)
+)
+knitr::kable(hvg_table, caption = "Top 30 HVGs")
+```
+
+## 4. Notes / decisions
+
+- Normalization method:
+- Number of HVGs:
+- Genes that were unexpected / interesting:
+- Anything to revise before PCA:
+
+---
+
+*Render: `quarto render 00_norm_template.qmd -P dataset_id:GSExxxxxx --output norm_exploration_GSExxxxxx.html`*

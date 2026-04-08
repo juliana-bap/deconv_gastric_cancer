@@ -1,0 +1,189 @@
+---
+title: "Pre-Annotation Exploration"
+author: "Juliana Pinto"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+params:
+  dataset_id: "GSExxxxxx"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  fig.width = 10, fig.height = 7
+)
+```
+
+# Pre-Annotation: `r params$dataset_id`
+
+Compares the three pre-annotation methods (SingleR HPCA, SingleR Blueprint, CellTypist) on the output of scripts `09a` + `09b` + `09c`.
+
+## Setup
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(dplyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- file.path(
+  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  paste0("config_", params$dataset_id, ".R")
+)
+source(config_path)
+```
+
+```{r load-object}
+seu <- readRDS(annotated_seurat_path)
+
+cat("Dataset:", dataset_id, "\n")
+cat("Dimensions:", nrow(seu), "genes x", ncol(seu), "cells\n")
+cat("Samples:", length(unique(seu$orig.ident)), "\n")
+
+annot_cols <- grep("singler|celltypist", colnames(seu@meta.data), value = TRUE)
+cat("Annotation columns:", paste(annot_cols, collapse = ", "), "\n")
+```
+
+## 1. UMAP — all annotations
+
+```{r umap-all, fig.width=12, fig.height=10}
+annotation_cluster_col <- paste0("RNA_snn_res.", annotation_resolution)
+
+plots <- list(
+  DimPlot(seu, group.by = annotation_cluster_col, label = TRUE) +
+    ggtitle(paste("Clusters (res", annotation_resolution, ")")) + NoLegend()
+)
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  plots[["hpca"]] <- DimPlot(seu, group.by = "singler_hpca",
+                             label = TRUE, repel = TRUE) +
+    ggtitle("SingleR - HPCA") + NoLegend()
+}
+if ("singler_blueprint" %in% colnames(seu@meta.data)) {
+  plots[["bp"]] <- DimPlot(seu, group.by = "singler_blueprint",
+                           label = TRUE, repel = TRUE) +
+    ggtitle("SingleR - Blueprint") + NoLegend()
+}
+if ("celltypist_label" %in% colnames(seu@meta.data)) {
+  plots[["ct"]] <- DimPlot(seu, group.by = "celltypist_label",
+                           label = TRUE, repel = TRUE) +
+    ggtitle("CellTypist") + NoLegend()
+}
+wrap_plots(plots, ncol = 2)
+```
+
+## 2. Annotation counts
+
+```{r counts}
+for (col in annot_cols[!grepl("conf_score", annot_cols)]) {
+  cat("\n---", col, "---\n")
+  print(sort(table(seu@meta.data[[col]]), decreasing = TRUE))
+}
+```
+
+## 3. CellTypist confidence
+
+```{r ct-confidence, fig.width=10, fig.height=10}
+if ("celltypist_conf_score" %in% colnames(seu@meta.data)) {
+  p1 <- FeaturePlot(seu, features = "celltypist_conf_score", order = TRUE) +
+    scale_color_gradient(low = "red", high = "steelblue", name = "Score") +
+    ggtitle("CellTypist confidence on UMAP")
+
+  p2 <- ggplot(seu@meta.data, aes(x = celltypist_conf_score)) +
+    geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+    geom_vline(xintercept = 0.5, linetype = "dashed", color = "red") +
+    ggtitle("CellTypist confidence distribution") +
+    xlab("Confidence score") + ylab("Cells")
+
+  p1 / p2
+}
+```
+
+## 4. Cluster-level consensus
+
+```{r consensus}
+consensus <- seu@meta.data %>%
+  group_by(across(all_of(annotation_cluster_col))) %>%
+  summarise(
+    n_cells = n(),
+    hpca = if ("singler_hpca" %in% colnames(seu@meta.data))
+      names(sort(table(singler_hpca), decreasing = TRUE))[1] else NA,
+    hpca_pct = if ("singler_hpca" %in% colnames(seu@meta.data))
+      round(max(table(singler_hpca)) / n() * 100, 1) else NA,
+    blueprint = if ("singler_blueprint" %in% colnames(seu@meta.data))
+      names(sort(table(singler_blueprint), decreasing = TRUE))[1] else NA,
+    blueprint_pct = if ("singler_blueprint" %in% colnames(seu@meta.data))
+      round(max(table(singler_blueprint)) / n() * 100, 1) else NA,
+    celltypist = if ("celltypist_label" %in% colnames(seu@meta.data))
+      names(sort(table(celltypist_label), decreasing = TRUE))[1] else NA,
+    celltypist_pct = if ("celltypist_label" %in% colnames(seu@meta.data))
+      round(max(table(celltypist_label)) / n() * 100, 1) else NA,
+    .groups = "drop"
+  )
+
+knitr::kable(consensus, caption = "Dominant annotation per cluster (% agreement)")
+```
+
+## 5. Confusion matrices
+
+```{r confusion-hpca, fig.width=10, fig.height=8}
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  ct <- table(Cluster = seu@meta.data[[annotation_cluster_col]],
+              HPCA    = seu$singler_hpca)
+  ct_prop <- prop.table(ct, margin = 1) * 100
+  pheatmap(ct_prop, fontsize = 7, display_numbers = TRUE,
+           number_format = "%.0f", cluster_rows = FALSE, cluster_cols = FALSE,
+           color = colorRampPalette(c("white", "steelblue"))(100),
+           main = "Cluster vs SingleR-HPCA (%)")
+}
+```
+
+```{r confusion-celltypist, fig.width=12, fig.height=8}
+if (all(c("celltypist_label", "singler_hpca") %in% colnames(seu@meta.data))) {
+  ct <- table(CellTypist = seu$celltypist_label,
+              HPCA       = seu$singler_hpca)
+  ct_prop <- prop.table(ct, margin = 1) * 100
+  pheatmap(ct_prop, fontsize = 6, display_numbers = TRUE,
+           number_format = "%.0f", cluster_rows = FALSE, cluster_cols = FALSE,
+           color = colorRampPalette(c("white", "steelblue"))(100),
+           main = "CellTypist vs SingleR-HPCA (%)")
+}
+```
+
+## 6. Composition by sample
+
+```{r by-sample}
+if ("singler_hpca" %in% colnames(seu@meta.data)) {
+  df <- seu@meta.data %>%
+    group_by(orig.ident, singler_hpca) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(orig.ident) %>% mutate(pct = n / sum(n) * 100)
+
+  ggplot(df, aes(x = orig.ident, y = pct, fill = singler_hpca)) +
+    geom_col() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    ggtitle("Cell type composition per sample (SingleR-HPCA)") +
+    ylab("% cells") + xlab(NULL)
+}
+```
+
+## 7. Notes / decisions
+
+- High-confidence cell types (3 methods agree):
+- Disagreements that need manual inspection:
+- Clusters with low CellTypist confidence:
+- Batch effect signs across samples:
+- Action items before integration:
+
+---
+
+*Render: `quarto render 00_annotation_template.qmd -P dataset_id:GSExxxxxx --output annotation_exploration_GSExxxxxx.html`*
