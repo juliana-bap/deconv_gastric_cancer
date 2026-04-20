@@ -46,7 +46,7 @@ dataset_id <- "<GSExxxxxx>"
 # Portable repository-root detection via the `here` package. No need to edit.
 # (Requires running R from within the cloned repo.)
 if (!requireNamespace("here", quietly = TRUE)) {
-  stop("Package 'here' is required. Run scripts/setup/install_r_deps.R first.")
+  stop("Package 'here' is required. Run setup/install_r_deps.R first.")
 }
 project_root <- here::here()
 
@@ -69,11 +69,14 @@ processed_base_dir <- file.path(project_root, "data", "sc_reference", "processed
 input_dir <- file.path(raw_base_dir, paste0(dataset_id, "_FIXED"))
 
 # Annotation files (shared across datasets — usually no need to change)
-annotation_dir     <- file.path(project_root, "annotation")
+annotation_dir     <- file.path(project_root, "chapter_2_sc_deconv_benchmarking",
+                                "01_sc_matrix", "annotation")
 mapping_table_path <- file.path(annotation_dir, "ensembl109_full_mapping.rds")
 
 # Utility functions (shared)
-utils_path <- file.path(project_root, "scripts", "sc_pre_proc", "pipeline", "00_utils_general.R")
+utils_path <- file.path(project_root, "chapter_2_sc_deconv_benchmarking",
+                        "01_sc_matrix", "scripts", "01_sc_pre_proc",
+                        "pipeline", "00_utils_general.R")
 
 # GEO metadata RDS (downloaded once via 01_download_metadata script when
 # needed). For most datasets it's downloaded automatically inside 01_import.

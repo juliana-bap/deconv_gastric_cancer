@@ -51,25 +51,18 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Dataset-specific files (keep only templates public)
-scripts/sc_pre_proc/configs/config_GSE*.R
-notebooks/**/QC_exploration_GSE*.qmd
-notebooks/**/norm_exploration_GSE*.qmd
-notebooks/**/dimred_exploration_GSE*.qmd
-notebooks/**/clustering_exploration_GSE*.qmd
-notebooks/**/rogue_exploration_GSE*.qmd
-notebooks/**/annotation_exploration_GSE*.qmd
-notebooks/**/*_GSE*_exploration.qmd
-notebooks/**/GSE*_exploration.qmd
-# keep config template public
-!scripts/sc_pre_proc/configs/config_TEMPLATE.R
+**/config_GSE*.R
+**/*_GSE*.qmd
+**/GSE*_exploration.qmd
+!**/config_TEMPLATE.R
+
+# HPC job scripts (cluster-specific, not portable)
+**/pbs/
 
 # Project-internal docs (not needed by external users)
 CLAUDE.md
 docs/ONBOARDING.md
-docs/reports/
-
-# HPC job scripts (cluster-specific, not portable)
-scripts/sc_pre_proc/pbs/
+chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/
 
 # Claude session backup (local-only context transfer)
 .claude_backup/
