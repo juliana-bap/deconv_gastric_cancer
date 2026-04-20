@@ -1,43 +1,60 @@
 # Deconvolution Project — Immune Signature of Gastric Cancer Patients from the Amazon Region
 
-This repository contains the full pipeline for preprocessing, integration, and analysis of public scRNA-seq datasets from gastric cancer, with the final objective of performing bulk RNA-seq deconvolution and downstream clinical association analyses on patient samples from the Amazon region.
+> **⚠️ Work in progress.** The single-cell preprocessing pipeline is actively running on multiple datasets. Integration, benchmarking, and clinical analyses are planned for subsequent phases. Scripts and notebooks are shared for transparency and reproducibility, not as a finished product.
 
-The project is structured in modular analytical phases to support reproducibility and future publications.
+This repository contains the code and notebooks for a PhD project that builds a gastric cancer immune reference matrix from public scRNA-seq data and uses it to deconvolve bulk RNA-seq samples from Amazon region patients.
 
 ---
 
-## Project Structure
+## PhD Structure
+
+The project is organized in three chapters, each corresponding to a publication:
+
+| Chapter | Goal | Status |
+|---------|------|--------|
+| `chapter_1_review/` | Review of the immune landscape of gastric cancer | ✍️ Writing |
+| `chapter_2_sc_deconv_benchmarking/` | scRNA-seq reference matrix + deconvolution benchmarking | 🔬 In progress |
+| `chapter_3_clinical/` | Clinical deconvolution of Amazon patient samples | 🗓️ Planned |
+
+---
+
+## Repository Structure
 
 ```
 deconv_gastric_cancer/
-├── data/
+│
+├── chapter_1_review/                    # Review article (manuscript not versioned)
+│
+├── chapter_2_sc_deconv_benchmarking/
+│   ├── 01_sc_matrix/                    # Etapa 1: scRNA-seq preprocessing → reference matrix
+│   │   ├── annotation/                  # Ensembl 109 mapping tables (not versioned)
+│   │   ├── scripts/
+│   │   │   ├── 01_sc_pre_proc/          # Pipeline scripts 01–09
+│   │   │   │   ├── pipeline/            # Numbered scripts
+│   │   │   │   │   └── 01_import/       # Dataset-specific import scripts
+│   │   │   │   └── configs/             # config_TEMPLATE.R (dataset configs are local only)
+│   │   │   └── 02_sc_integration_matrix/ # Multi-dataset integration (planned)
+│   │   └── notebooks/                   # Quarto exploration notebooks
+│   │       ├── datasets/
+│   │       ├── qc_exploration/
+│   │       ├── normalization/
+│   │       ├── clustering/
+│   │       ├── rogue/
+│   │       └── annotation/
+│   └── 02_deconv_benchmarking/          # Etapa 2: tool benchmarking (planned)
+│
+├── chapter_3_clinical/                  # Clinical application (planned)
+│
+├── data/                                # NOT versioned — all raw and processed data
 │   └── sc_reference/
-│       ├── raw/            # Raw scRNA-seq datasets (not versioned)
-│       ├── processed/      # Processed Seurat objects (not versioned)
-│       └── metadata/       # GEO metadata RDS files (not versioned)
+│       ├── raw/                         # Raw scRNA-seq datasets
+│       ├── processed/                   # Processed Seurat objects (.rds)
+│       └── metadata/                    # GEO metadata
 │
-├── scripts/
-│   ├── sc_pre_proc/        # Single-cell preprocessing 
-│   │   ├── pipeline/       # Numbered pipeline scripts (00–09)
-│   │   │   └── 01_import/  # Dataset-specific import scripts
-│   │   ├── configs/        # Per-dataset config files
-│   │   └── pbs/            # PBS scripts for HPC server
-│   ├── integration/        # Multi-dataset integration 
-│   ├── deconvolution/      # Bulk RNA-seq deconvolution
-│   └── clinical_analysis/  # Clinical association analyses
-│
-├── notebooks/              # Quarto exploration notebooks
-│   ├── datasets/
-│   ├── qc_exploration/
-│   ├── normalization/
-│   ├── clustering/
-│   ├── rogue/
-│   └── annotation/
-│
-├── results/                # Figures, tables (not versioned)
-├── docs/                   # Documentation and notes
-├── README.md
-├── .gitignore
+├── results/                             # NOT versioned — figures and tables
+├── docs/                                # Project documentation
+├── setup/                               # Environment setup scripts
+├── environment.yml                      # Conda environment (Python/CellTypist)
 └── deconv_gastric_cancer.Rproj
 ```
 
@@ -45,105 +62,145 @@ deconv_gastric_cancer/
 
 ## Datasets
 
-Five public gastric cancer scRNA-seq datasets from GEO:
+Five public gastric cancer scRNA-seq datasets from GEO (subset may change):
 
-| GEO ID | Format | Notes |
-|--------|--------|-------|
-| GSE163558 | 10X (Read10X) | **Pilot dataset** — pipeline development |
-| GSE246662 | CSV | Requires orientation fix |
-| GSE264203 | H5 | Split by barcode suffix |
-| GSE291080 | 10X (Read10X) | Excludes sample GSM8828843_a187_es |
-| GSE201347 | Seurat RDS | Processed on HPC server (large) |
+| GEO ID | Format | Notes | Status |
+|--------|--------|-------|--------|
+| GSE163558 | 10X (Read10X) | **Pilot** — full pipeline completed | ✅ Done |
+| GSE246662 | CSV | Requires matrix orientation fix | 🔬 In progress |
+| GSE264203 | H5 | Split by barcode suffix | 🗓️ Pending |
+| GSE291080 | 10X (Read10X) | Excludes sample GSM8828843_a187_es | 🗓️ Pending |
+| GSE201347 | Seurat RDS | Large dataset, processed on HPC (PBS) | 🔬 In progress |
 
 ---
 
-## Preprocessing Pipeline (sc_pre_proc)
+## Preprocessing Pipeline (`01_sc_pre_proc`)
 
-Each script is **modular** and reads its inputs/outputs from a per-dataset config file. The standard call is always:
+Each script is **modular** and reads all inputs/outputs from a per-dataset config file.
+
+### Running a script
 
 ```bash
-Rscript <script>.R <config_file>.R
+# From the repo root (required for here::here() to work)
+cd ~/doutorado/deconv_gastric_cancer
+
+Rscript chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pipeline/<script>.R \
+        chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_<DATASET>.R
 ```
+
+> **Note:** always run from within the repository directory so that `here::here()` correctly detects the project root.
 
 ### Pipeline steps
 
-| Step | Script | Purpose |
-|------|--------|---------|
-| 00 | `00_utils_general.R` | Utility functions (orientation fix, Ensembl ID conversion) |
-| 00 | `00_download_annotation_ensembl109.R` | Download Ensembl 109 annotation (run once) |
-| 00 | `00_downloadannotation_org_hs_eg_db.R` | Download org.Hs.eg.db (run once) |
-| 01 | `01_import/01_import_<DATASET>.R` | Dataset-specific raw import → sparse matrix |
-| 02 | `02_create_seurat_object.R` | Build Seurat object with gene_symbol, dataset_id, sample_id, GEO metadata |
-| 03 | `03_qc_metrics.R` | Compute %mt, %ribo, %hb, run scDblFinder, generate violin plots |
-| 04 | `04_qc_filtering.R` *or* `04_qc_filtering_mad.R` | Apply fixed cutoffs (or MAD-based intra-sample) |
-| 05 | `05_merge.R` | Merge samples + JoinLayers + rebuild gene_symbol |
-| 06 | `06_normalize_hvg.R` | RC normalization + VST HVG selection |
-| 07a | `07a_dimred.R` | ScaleData + PCA + ElbowPlot |
-| 07b | `07b_clustering.R` | FindNeighbors + Leiden clustering + UMAP |
-| 08 | `08_rogue.R` | ROGUE cluster purity scores per cluster × sample |
-| 09a | `09a_pre_annotation_singler.R` | SingleR (HPCA + Blueprint) + h5ad export |
-| 09b | `09b_run_celltypist.R` | R wrapper that calls `09b_celltypist.py` (CellTypist annotation) |
-| 09c | `09c_import_celltypist.R` | Import CellTypist CSV back into Seurat object |
+| Step | Script | Purpose | Pause for notebook? |
+|------|--------|---------|---------------------|
+| 00 | `00_utils_general.R` | Shared utility functions | — |
+| 00 | `00_download_annotation_ensembl109.R` | Download Ensembl 109 mapping (run once) | — |
+| 00 | `00_downloadannotation_org_hs_eg_db.R` | Download org.Hs.eg.db mapping (run once) | — |
+| 01 | `01_import/01_import_<DATASET>.R` | Dataset-specific import → sparse matrix RDS | — |
+| 02 | `02_create_seurat_object.R` | Build Seurat object with metadata | — |
+| 03 | `03_qc_metrics.R` | Compute %mt, %ribo, %hb; run scDblFinder | ✋ QC notebook |
+| 04 | `04_qc_filtering.R` / `04_qc_filtering_mad.R` | Apply QC cutoffs | — |
+| 05 | `05_merge.R` | Merge samples + JoinLayers | — |
+| 06 | `06_normalize_hvg.R` | RC normalization + VST HVG selection | ✋ Normalization notebook |
+| 07a | `07a_dimred.R` | ScaleData + PCA | ✋ Dimred notebook |
+| 07b | `07b_clustering.R` | FindNeighbors + Leiden + UMAP | ✋ Clustering notebook |
+| 08 | `08_rogue.R` | ROGUE cluster purity scores | ✋ ROGUE notebook |
+| 09a | `09a_pre_annotation_singler.R` | SingleR (HPCA + Blueprint) + h5ad export | — |
+| 09b | `09b_run_celltypist.R` | CellTypist annotation (calls `09b_celltypist.py`) | — |
+| 09c | `09c_import_celltypist.R` | Import CellTypist results into Seurat | ✋ Annotation notebook |
 
-### Running the full pipeline for one dataset
-
-Example for the pilot dataset GSE163558:
+### Full example — pilot dataset GSE163558
 
 ```bash
-cd scripts/sc_pre_proc/pipeline
+PIPELINE="chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pipeline"
+CONFIG="chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_GSE163558.R"
 
 # Import + Seurat object
-Rscript 01_import/01_import_GSE163558.R ../configs/config_GSE163558.R
-Rscript 02_create_seurat_object.R       ../configs/config_GSE163558.R
+Rscript $PIPELINE/01_import/01_import_GSE163558.R $CONFIG
+Rscript $PIPELINE/02_create_seurat_object.R       $CONFIG
 
-# QC
-Rscript 03_qc_metrics.R                 ../configs/config_GSE163558.R
-Rscript 04_qc_filtering.R               ../configs/config_GSE163558.R
+# QC → inspect QC notebook → set thresholds in config → filter
+Rscript $PIPELINE/03_qc_metrics.R                 $CONFIG
+Rscript $PIPELINE/04_qc_filtering.R               $CONFIG
 
-# Merge + normalization
-Rscript 05_merge.R                      ../configs/config_GSE163558.R
-Rscript 06_normalize_hvg.R              ../configs/config_GSE163558.R
+# Merge + normalization → inspect normalization notebook
+Rscript $PIPELINE/05_merge.R                      $CONFIG
+Rscript $PIPELINE/06_normalize_hvg.R              $CONFIG
 
-# Dimred + clustering
-Rscript 07a_dimred.R                    ../configs/config_GSE163558.R
-Rscript 07b_clustering.R                ../configs/config_GSE163558.R
+# Dimred → inspect elbow plot → set dims_to_use in config
+Rscript $PIPELINE/07a_dimred.R                    $CONFIG
+Rscript $PIPELINE/07b_clustering.R                $CONFIG
 
-# Cluster purity
-Rscript 08_rogue.R                      ../configs/config_GSE163558.R
+# Cluster purity → inspect ROGUE notebook
+Rscript $PIPELINE/08_rogue.R                      $CONFIG
 
 # Pre-annotation (SingleR + CellTypist)
-Rscript 09a_pre_annotation_singler.R    ../configs/config_GSE163558.R
-Rscript 09b_run_celltypist.R            ../configs/config_GSE163558.R
-Rscript 09c_import_celltypist.R         ../configs/config_GSE163558.R
+Rscript $PIPELINE/09a_pre_annotation_singler.R    $CONFIG
+Rscript $PIPELINE/09b_run_celltypist.R            $CONFIG
+Rscript $PIPELINE/09c_import_celltypist.R         $CONFIG
 ```
+
+### Adding a new dataset
+
+1. Copy the config template and fill in the dataset-specific fields:
+   ```bash
+   cp chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_TEMPLATE.R \
+      chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_<DATASET>.R
+   ```
+2. Write a dataset-specific import script under `pipeline/01_import/`.
+3. Run the pipeline step by step, pausing at the notebook checkpoints (steps 03, 06, 07a, 07b, 08, 09c).
+
+> Dataset-specific configs are **not versioned** — they contain local paths and dataset-specific thresholds that vary between machines and analysts.
 
 ### Exploration notebooks
 
-After running the pipeline, render the corresponding Quarto notebook to inspect the results:
+After each pipeline checkpoint, render the corresponding Quarto notebook to inspect results visually:
 
 ```bash
-cd notebooks/<topic>
-quarto render <notebook>_GSE163558.qmd
+# From the repo root
+quarto render chapter_2_sc_deconv_benchmarking/01_sc_matrix/notebooks/qc_exploration/00_qc_template.qmd \
+  -P dataset_id:GSE163558
 ```
 
-Available notebook topics: `qc_exploration`, `normalization`, `clustering`, `rogue`, `annotation`.
+Available notebooks: `qc_exploration`, `normalization`, `clustering`, `rogue`, `annotation`, `datasets`.
 
 ---
 
 ## Setup
 
-A one-shot setup script and a conda environment file are provided:
+### 1. Clone the repository
 
 ```bash
-# 1. R packages (CRAN + Bioconductor + GitHub)
-Rscript scripts/setup/install_r_deps.R
+git clone https://github.com/juliana-bap/deconv_gastric_cancer.git
+cd deconv_gastric_cancer
+```
 
-# 2. Python environment (CellTypist)
+### 2. R packages
+
+```bash
+Rscript setup/install_r_deps.R
+```
+
+Installs all CRAN, Bioconductor, and GitHub dependencies idempotently.
+See [`setup/README.md`](setup/README.md) for detailed instructions including `renv` lockfile and HPC server setup.
+
+### 3. Python environment (for CellTypist — script 09b)
+
+```bash
 conda env create -f environment.yml
 conda activate deconv_gc_py
 ```
 
-See [`scripts/setup/README.md`](scripts/setup/README.md) for full setup instructions, including how to point reticulate at the conda env and how to lock R package versions with `renv`.
+Then point reticulate to this environment by adding the following line to `~/.Renviron`:
+
+```
+RETICULATE_PYTHON=/path/to/miniconda3/envs/deconv_gc_py/bin/python
+```
+
+### 4. Quarto (for notebooks)
+
+Install from <https://quarto.org/docs/get-started/> (version ≥ 1.4).
 
 ---
 
@@ -151,65 +208,28 @@ See [`scripts/setup/README.md`](scripts/setup/README.md) for full setup instruct
 
 ### R (≥ 4.4)
 
-CRAN packages:
+| Package | Source | Role |
+|---------|--------|------|
+| Seurat ≥ 5.0 | CRAN | scRNA-seq core |
+| Matrix | CRAN | Sparse matrix ops |
+| ggplot2, patchwork, pheatmap | CRAN | Visualization |
+| dplyr, tibble | CRAN | Data wrangling |
+| here | CRAN | Portable path resolution |
+| reticulate | CRAN | R ↔ Python bridge |
+| GEOquery, biomaRt | Bioconductor | GEO + annotation |
+| SingleCellExperiment, scDblFinder | Bioconductor | QC / doublet detection |
+| SingleR, celldex | Bioconductor | Automated annotation |
+| ROGUE | GitHub (PaulingLiu) | Cluster purity |
 
-```r
-install.packages(c(
-  "Seurat",         # ≥ 5.0  — scRNA-seq core
-  "Matrix",         # sparse matrix ops
-  "ggplot2",
-  "patchwork",
-  "pheatmap",
-  "dplyr",
-  "tibble",         # required by ROGUE
-  "reticulate",     # R ↔ Python bridge for h5ad export
-  "remotes"
-))
-```
+### Python (≥ 3.10)
 
-Bioconductor packages:
+| Package | Role |
+|---------|------|
+| celltypist ≥ 1.6 | Cell type annotation |
+| scanpy, anndata | h5ad I/O |
+| scipy, numpy, pandas | Data processing |
 
-```r
-if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-BiocManager::install(c(
-  "GEOquery",
-  "biomaRt",
-  "org.Hs.eg.db",
-  "AnnotationDbi",
-  "SingleCellExperiment",
-  "scDblFinder",
-  "SingleR",
-  "celldex"
-))
-```
-
-GitHub-only packages:
-
-```r
-remotes::install_github("PaulingLiu/ROGUE")
-```
-
-### Python (≥ 3.10) — for CellTypist (script 09b)
-
-```bash
-pip install scanpy celltypist anndata pandas matplotlib scipy numpy
-```
-
-Or via conda:
-
-```bash
-conda create -n celltypist_env python=3.10
-conda activate celltypist_env
-pip install scanpy celltypist anndata pandas matplotlib
-```
-
-The R script `09a_pre_annotation_singler.R` uses **reticulate** to write h5ad directly (avoiding sceasy, which is incompatible with Seurat v5). Make sure reticulate sees the right Python environment — set `RETICULATE_PYTHON` in `~/.Renviron` or in the dataset config if needed.
-
-### Quarto (≥ 1.4)
-
-For rendering the exploration notebooks. Install from <https://quarto.org/docs/get-started/>.
-
-### Recommended tested versions (pilot run)
+### Tested versions (pilot run — GSE163558)
 
 | Tool | Version |
 |------|---------|
@@ -221,72 +241,53 @@ For rendering the exploration notebooks. Install from <https://quarto.org/docs/g
 
 ---
 
-## Working with the GitHub repository
+## Key Design Decisions
 
-### Clone
-
-```bash
-git clone https://github.com/juliana-bap/deconv_gastric_cancer.git
-cd deconv_gastric_cancer
-```
-
-### Branch workflow
-
-The default branch is `main`. For new work:
-
-```bash
-git checkout -b feature/<short-description>
-# ... make changes ...
-git add scripts/<file>.R
-git commit -m "Short message describing the change"
-git push -u origin feature/<short-description>
-```
-
-Then open a Pull Request on GitHub against `main`.
-
-### What is **not** versioned (see `.gitignore`)
-
-- All raw and processed data (`data/raw/`, `data/sc_reference/raw/`, `data/sc_reference/processed/`)
-- All `.rds`/`.rda` Seurat objects
-- All Quarto rendered outputs (`*.html`, `*.pdf`, `*.png`, `*_files/`)
-- The `results/` folder
-- R session files (`.Rhistory`, `.RData`, `.Rproj.user/`)
-- macOS metadata (`.DS_Store`)
-- `.claude/` (local environment)
-
-### What **is** versioned
-
-- All scripts (`scripts/`)
-- All notebook source `.qmd` files
-- Per-dataset config files
-- Documentation (`README.md`, `docs/`)
+- **RC normalization (no log):** downstream goal is a deconvolution reference matrix, not differential expression. Log normalization will be reconsidered at the integration step.
+- **Leiden clustering (algorithm 4):** preferred over Louvain for better community detection.
+- **Ensembl IDs as rownames:** gene symbols are held in feature metadata; the mapping comes from `01_sc_matrix/annotation/ensembl109_full_mapping.rds`.
+- **Portable paths via `here::here()`:** no hardcoded absolute paths in any versioned script. Run R from inside the repo directory.
+- **Modular configs:** every decision (thresholds, resolutions, sample exclusions) is documented in a per-dataset config file, not scattered across scripts.
 
 ---
 
-## Conventions
+## What Is and Is Not Versioned
 
-- **Raw data is never modified.** Each dataset has its own import script.
-- **Modular scripts:** every script reads inputs and writes outputs based on a config file (`scripts/sc_pre_proc/configs/config_<DATASET>.R`).
-- **Consistent interface:** all scripts are called as `Rscript <script>.R <config>.R`.
-- QC thresholds are defined per-dataset in the config, not hard-coded.
-- Processed objects are saved as `.rds` (excluded from git).
-- All paths are absolute via `project_root` defined in each config.
-- Each dataset has its own exploration notebooks under `notebooks/<topic>/`.
+**Versioned (public):**
+- All pipeline scripts (`pipeline/`)
+- Config template (`config_TEMPLATE.R`)
+- Notebook templates (`00_*_template.qmd`)
+- Setup scripts (`setup/`)
+- Documentation (`docs/`, `README.md`)
+
+**Not versioned (local only):**
+- Raw and processed data (`data/`) — download from GEO
+- Seurat objects (`.rds`, `.rda`)
+- Rendered notebook outputs (`*.html`, `*.pdf`, `*_files/`)
+- Results (`results/`)
+- Per-dataset configs (`config_GSE*.R`) — machine and analyst-specific
+- Per-dataset notebooks — created from templates for each run
+- HPC job scripts (`pbs/`) — cluster-specific
 
 ---
 
 ## Project Status
 
 - [x] Repository structure defined
-- [x] Pilot dataset (GSE163558) preprocessed end-to-end (steps 01–09)
-- [ ] All scRNA-seq datasets pre-processed
-- [ ] Multi-dataset integration completed
+- [x] Setup scripts (`install_r_deps.R`, `environment.yml`)
+- [x] Full pipeline implemented (scripts 01–09)
+- [x] Pilot dataset GSE163558 preprocessed end-to-end
+- [ ] Remaining datasets preprocessed (GSE246662, GSE264203, GSE291080, GSE201347)
+- [ ] Multi-dataset integration
 - [ ] Reference matrix finalized
-- [ ] Deconvolution applied to patient bulk data
-- [ ] Clinical association analyses completed
+- [ ] Deconvolution tool benchmarking
+- [ ] Deconvolution applied to clinical bulk RNA-seq
+- [ ] Clinical association analyses
 
 ---
 
 ## Author
 
-Juliana Barreto Albuquerque Pinto — PhD Project, Gastric Cancer Deconvolution
+Juliana Barreto Albuquerque Pinto
+PhD candidate — Universidade Federal do Pará (UFPA)
+Contact: fcmoreira@ufpa.br
