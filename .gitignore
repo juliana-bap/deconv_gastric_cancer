@@ -62,7 +62,8 @@ __pycache__/
 # Project-internal docs (not needed by external users)
 CLAUDE.md
 docs/ONBOARDING.md
-chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/
+chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports
+chapter_1_review/ARTIGO - Cenário Imune do CG.docx
 
 # Claude session backup (local-only context transfer)
 .claude_backup/
