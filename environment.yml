@@ -1,0 +1,30 @@
+# Conda environment for the Python part of the gastric cancer
+# deconvolution pipeline (CellTypist annotation, script 09b).
+#
+# Create:    conda env create -f environment.yml
+# Activate:  conda activate deconv_gc_py
+# Update:    conda env update -f environment.yml --prune
+#
+# This environment is what reticulate (called from 09a_pre_annotation_singler.R
+# and 09b_run_celltypist.R) needs to find. After creating it, point R to it
+# by setting RETICULATE_PYTHON in ~/.Renviron, e.g.:
+#   RETICULATE_PYTHON=/Users/<user>/miniconda3/envs/deconv_gc_py/bin/python
+
+name: deconv_gc_py
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - anndata
+  - scanpy>=1.9
+  - h5py
+  - pip:
+      - celltypist>=1.6

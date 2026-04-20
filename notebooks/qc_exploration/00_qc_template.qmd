@@ -39,7 +39,7 @@ theme_set(theme_classic())
 
 ```{r load-config}
 config_path <- file.path(
-  "~/doutorado/deconv_gastric_cancer/scripts/sc_pre_proc/configs",
+  here::here("scripts", "sc_pre_proc", "configs"),
   paste0("config_", params$dataset_id, ".R")
 )
 source(config_path)

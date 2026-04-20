@@ -43,8 +43,12 @@ dataset_id <- "<GSExxxxxx>"
 
 
 # ---- Project root ----------------------------------------------------------
-# Absolute path to the repository root. Update for your machine if needed.
-project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
+# Portable repository-root detection via the `here` package. No need to edit.
+# (Requires running R from within the cloned repo.)
+if (!requireNamespace("here", quietly = TRUE)) {
+  stop("Package 'here' is required. Run scripts/setup/install_r_deps.R first.")
+}
+project_root <- here::here()
 
 
 # ---- Base directories (do not edit unless project layout changes) ----------
