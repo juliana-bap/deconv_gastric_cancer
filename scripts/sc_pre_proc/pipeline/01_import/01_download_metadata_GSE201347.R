@@ -16,7 +16,11 @@
 library(GEOquery)
 
 # ---- Paths (local) ----
-project_root <- "/Users/julianapinto/doutorado/deconv_gastric_cancer"
+# here::here() detects the repo root automatically — no need to edit
+if (!requireNamespace("here", quietly = TRUE)) {
+  stop("Package 'here' required. Run scripts/setup/install_r_deps.R first.")
+}
+project_root <- here::here()
 dataset_id <- "GSE201347"
 metadata_dir <- file.path(project_root, "data", "sc_reference", "metadata")
 metadata_path <- file.path(metadata_dir, paste0("metadata_", dataset_id, ".rds"))

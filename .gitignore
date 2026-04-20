@@ -36,3 +36,40 @@ results/
 
 # Notebooks build folders
 *_files/
+
+# renv (keep lockfile + activate, exclude library)
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/staging/
+
+# Python / conda
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Dataset-specific files (keep only templates public)
+scripts/sc_pre_proc/configs/config_GSE*.R
+notebooks/**/QC_exploration_GSE*.qmd
+notebooks/**/norm_exploration_GSE*.qmd
+notebooks/**/dimred_exploration_GSE*.qmd
+notebooks/**/clustering_exploration_GSE*.qmd
+notebooks/**/rogue_exploration_GSE*.qmd
+notebooks/**/annotation_exploration_GSE*.qmd
+notebooks/**/*_GSE*_exploration.qmd
+notebooks/**/GSE*_exploration.qmd
+# keep config template public
+!scripts/sc_pre_proc/configs/config_TEMPLATE.R
+
+# Project-internal docs (not needed by external users)
+CLAUDE.md
+docs/ONBOARDING.md
+docs/reports/
+
+# HPC job scripts (cluster-specific, not portable)
+scripts/sc_pre_proc/pbs/
+
+# Claude session backup (local-only context transfer)
+.claude_backup/
