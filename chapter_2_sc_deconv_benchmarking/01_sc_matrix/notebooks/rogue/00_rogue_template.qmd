@@ -38,7 +38,7 @@ theme_set(theme_classic())
 
 ```{r load-config}
 config_path <- file.path(
-  here::here("scripts", "sc_pre_proc", "configs"),
+  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix", "scripts", "01_sc_pre_proc", "configs"),
   paste0("config_", params$dataset_id, ".R")
 )
 source(config_path)
