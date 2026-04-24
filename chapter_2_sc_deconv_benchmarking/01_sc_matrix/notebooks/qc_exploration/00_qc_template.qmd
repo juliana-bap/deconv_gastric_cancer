@@ -1,45 +1,63 @@
 ---
 title: "QC Exploration"
 author: "Juliana Pinto"
-date: today
-format:
-  html:
-    toc: true
-    toc-depth: 3
-    code-fold: true
-    theme: cosmo
+format: html
+editor: visual
 params:
-  dataset_id: "GSExxxxxx"
+  dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE,
-  message = FALSE,
-  warning = FALSE,
-  fig.width = 10,
-  fig.height = 6
-)
-```
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
+
+ 1. Copy this template to a dataset-specific file:
+      cp 00_qc_template.qmd QC_exploration_<DATASET>.qmd
+    (the copy is gitignored by the **/*_GSE*.qmd rule).
+
+ 2. Open the copy in RStudio — ideally by double-clicking
+    deconv_gastric_cancer.Rproj first, so the working directory is the
+    repo root and here::here() resolves correctly.
+
+ 3. Edit the YAML header above:
+      params:
+        dataset_id: "GSE246662"   # your dataset
+
+ 4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
+    with the green "Render" button in RStudio.
+
+ Alternative: render from the terminal without editing the YAML:
+      quarto render 00_qc_template.qmd \
+        -P dataset_id:GSE246662 \
+        --output QC_exploration_GSE246662.html
+
+ This notebook expects that script 03_qc_metrics.R has already been run
+ for the chosen dataset. It only reads the per-sample RDS files written
+ by that script.
+================================================================================
+-->
 
 # QC Exploration: `r params$dataset_id`
 
-This notebook explores the QC metrics computed by `03_qc_metrics.R` for the `r params$dataset_id` dataset, before filtering. The aim is to choose informed thresholds for `04_qc_filtering.R`.
+Exploratory inspection of the QC metrics computed by `03_qc_metrics.R`, **before** filtering. Use this notebook to decide on the cutoffs to set in `config_<DATASET>.R` before running `04_qc_filtering.R`.
 
 ## Setup
 
-```{r libs}
+```{r libs, message=FALSE, warning=FALSE}
 library(Seurat)
 library(ggplot2)
 library(patchwork)
-library(dplyr)
 
 theme_set(theme_classic())
 ```
 
 ```{r load-config}
+# Loads config_<DATASET>.R using params$dataset_id. Paths resolve via here::here(),
+# which requires this notebook to be run from the repo root (RStudio opens the
+# project at the root automatically when you launch via the .Rproj file).
 config_path <- file.path(
-  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix", "scripts", "01_sc_pre_proc", "configs"),
+  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+             "scripts", "01_sc_pre_proc", "configs"),
   paste0("config_", params$dataset_id, ".R")
 )
 source(config_path)
@@ -51,107 +69,298 @@ qc_files <- list.files(
   pattern = "_seurat_qc_metrics.rds$",
   full.names = TRUE
 )
+
 sample_names <- gsub("_seurat_qc_metrics.rds", "", basename(qc_files))
-seu_list <- setNames(lapply(qc_files, readRDS), sample_names)
+
+seu_list <- setNames(
+  lapply(qc_files, readRDS),
+  sample_names
+)
 
 cat("Samples loaded:", length(seu_list), "\n")
 cat("Names:", paste(names(seu_list), collapse = ", "), "\n")
 ```
 
-## 1. Per-sample summary
+## 1. Overview
 
 ```{r summary-table}
 qc_summary <- do.call(rbind, lapply(names(seu_list), function(s) {
+
   seu <- seu_list[[s]]
+
   data.frame(
-    sample          = s,
-    cells           = ncol(seu),
+    sample = s,
+    cells = ncol(seu),
     median_features = median(seu$nFeature_RNA),
-    median_counts   = median(seu$nCount_RNA),
-    median_mt       = round(median(seu$percent.mt), 2),
-    median_ribo     = round(median(seu$percent.ribo), 2),
-    median_hb       = round(median(seu$percent.hb), 2),
-    pct_doublets    = if ("scDblFinder.class" %in% colnames(seu@meta.data))
-      round(100 * mean(seu$scDblFinder.class == "doublet"), 1) else NA
+    median_counts = median(seu$nCount_RNA),
+    median_mt = round(median(seu$percent.mt), 2),
+    median_ribo = round(median(seu$percent.ribo), 2),
+    median_hb = round(median(seu$percent.hb), 2),
+    pct_doublets = if ("scDblFinder.class" %in% colnames(seu@meta.data)) {
+      round(100 * mean(seu$scDblFinder.class == "doublet"), 1)
+    } else {
+      NA
+    }
   )
 }))
 
 knitr::kable(qc_summary, caption = paste("QC summary -", params$dataset_id))
-cat("Total cells:", sum(qc_summary$cells), "\n")
 ```
 
-## 2. Combined metadata
+```{r total-cells}
+cat("Total cells across all samples:", sum(qc_summary$cells), "\n")
+```
 
-```{r combined-meta}
+## 2. Comparative boxplots (all samples)
+
+Combine all metadata into a single dataframe for cross-sample comparison.
+
+```{r combined-metadata}
 combined_meta <- do.call(rbind, lapply(names(seu_list), function(s) {
   df <- seu_list[[s]]@meta.data
   df$sample <- s
   df
 }))
+
+combined_meta$sample <- factor(combined_meta$sample, levels = names(seu_list))
 ```
 
-## 3. Comparative violin plots
+```{r boxplot-features-counts, fig.width=12, fig.height=5}
+p1 <- ggplot(combined_meta, aes(x = sample, y = nFeature_RNA, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("nFeature_RNA per sample")
 
-```{r violins, fig.height=8}
-metrics <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo", "percent.hb")
+p2 <- ggplot(combined_meta, aes(x = sample, y = nCount_RNA, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("nCount_RNA per sample")
 
-plots <- lapply(metrics, function(m) {
-  ggplot(combined_meta, aes(x = sample, y = .data[[m]], fill = sample)) +
-    geom_violin(scale = "width") +
-    geom_boxplot(width = 0.1, fill = "white", outlier.size = 0.3) +
-    ggtitle(m) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          legend.position = "none")
-})
-
-wrap_plots(plots, ncol = 2)
+p1 + p2
 ```
 
-## 4. Distributions and candidate thresholds
+```{r boxplot-percentages, fig.width=14, fig.height=5}
+p1 <- ggplot(combined_meta, aes(x = sample, y = percent.mt, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  geom_hline(yintercept = qc_max_percent_mt, linetype = "dashed", color = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("percent.mt per sample")
 
-```{r distributions, fig.height=8}
-p1 <- ggplot(combined_meta, aes(x = nFeature_RNA, fill = sample)) +
-  geom_density(alpha = 0.4) + scale_x_log10() +
-  ggtitle("nFeature_RNA (log10)")
+p2 <- ggplot(combined_meta, aes(x = sample, y = percent.ribo, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("percent.ribo per sample")
 
-p2 <- ggplot(combined_meta, aes(x = nCount_RNA, fill = sample)) +
-  geom_density(alpha = 0.4) + scale_x_log10() +
-  ggtitle("nCount_RNA (log10)")
+p3 <- ggplot(combined_meta, aes(x = sample, y = percent.hb, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("percent.hb per sample")
 
-p3 <- ggplot(combined_meta, aes(x = percent.mt, fill = sample)) +
-  geom_density(alpha = 0.4) +
-  geom_vline(xintercept = 20, linetype = "dashed", color = "red") +
-  ggtitle("% mitochondrial")
-
-p4 <- ggplot(combined_meta, aes(x = percent.ribo, fill = sample)) +
-  geom_density(alpha = 0.4) +
-  ggtitle("% ribosomal")
-
-(p1 + p2) / (p3 + p4)
+p1 + p2 + p3
 ```
 
-## 5. Doublets
+## 3. Violin plots per sample
 
-```{r doublets}
-if ("scDblFinder.class" %in% colnames(combined_meta)) {
-  doublet_table <- combined_meta %>%
-    group_by(sample, scDblFinder.class) %>%
-    summarise(n = n(), .groups = "drop") %>%
-    tidyr::pivot_wider(names_from = scDblFinder.class, values_from = n, values_fill = 0)
-  knitr::kable(doublet_table, caption = "Doublet calls per sample")
+```{r violin-main, fig.width=10, fig.height=5, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  seu <- seu_list[[s]]
+
+  print(
+    VlnPlot(seu, features = c("nFeature_RNA", "nCount_RNA"), pt.size = 0) +
+      plot_annotation(title = s)
+  )
 }
 ```
 
-## 6. Notes / decisions
+```{r violin-percentages, fig.width=10, fig.height=5, results='asis'}
+for (s in names(seu_list)) {
 
-- Suggested cutoffs to set in the config:
-  - `min_features`:
-  - `max_features`:
-  - `max_percent_mt`:
-- Samples needing special attention:
-- Doublet removal strategy:
+  cat("\n\n###", s, "\n\n")
 
----
+  seu <- seu_list[[s]]
 
-*Template — duplicate and rename to `QC_exploration_<DATASET>.qmd` per dataset, or render parametrically:*
-*`quarto render 00_qc_template.qmd -P dataset_id:GSExxxxxx --output QC_exploration_GSExxxxxx.html`*
+  print(
+    VlnPlot(seu, features = c("percent.mt", "percent.ribo", "percent.hb"), pt.size = 0) +
+      plot_annotation(title = s)
+  )
+}
+```
+
+## 4. Histograms
+
+```{r hist-features, fig.width=10, fig.height=4, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  df <- seu_list[[s]]@meta.data
+
+  p1 <- ggplot(df, aes(x = nFeature_RNA)) +
+    geom_histogram(bins = 80, fill = "steelblue", color = "white") +
+    geom_vline(xintercept = qc_min_features, linetype = "dashed", color = "red") +
+    ggtitle(paste("nFeature_RNA -", s))
+
+  p2 <- ggplot(df, aes(x = nCount_RNA)) +
+    geom_histogram(bins = 80, fill = "steelblue", color = "white") +
+    geom_vline(xintercept = qc_min_counts, linetype = "dashed", color = "red") +
+    ggtitle(paste("nCount_RNA -", s))
+
+  print(p1 + p2)
+}
+```
+
+```{r hist-mt-density, fig.width=10, fig.height=4, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  df <- seu_list[[s]]@meta.data
+
+  p1 <- ggplot(df, aes(x = percent.mt)) +
+    geom_histogram(bins = 80, fill = "steelblue", color = "white") +
+    geom_vline(xintercept = qc_max_percent_mt, linetype = "dashed", color = "red") +
+    ggtitle(paste("percent.mt -", s))
+
+  p2 <- ggplot(df, aes(x = percent.mt)) +
+    geom_density(fill = "steelblue", alpha = 0.3) +
+    geom_vline(xintercept = qc_max_percent_mt, linetype = "dashed", color = "red") +
+    geom_vline(xintercept = quantile(df$percent.mt, 0.99),
+               linetype = "dotted", color = "darkred") +
+    ggtitle(paste("percent.mt density -", s, "(dotted = p99)"))
+
+  print(p1 + p2)
+}
+```
+
+## 5. Scatter plots
+
+```{r scatter-counts-features, fig.width=10, fig.height=5, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  df <- seu_list[[s]]@meta.data
+
+  p1 <- ggplot(df, aes(x = nCount_RNA, y = nFeature_RNA, color = percent.mt)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    scale_color_viridis_c() +
+    ggtitle(paste("Counts vs Features -", s))
+
+  p2 <- ggplot(df, aes(x = nCount_RNA, y = percent.mt)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    geom_hline(yintercept = qc_max_percent_mt, linetype = "dashed", color = "red") +
+    ggtitle(paste("Counts vs percent.mt -", s))
+
+  print(p1 + p2)
+}
+```
+
+```{r scatter-counts-ribo, fig.width=10, fig.height=5, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  df <- seu_list[[s]]@meta.data
+
+  p1 <- ggplot(df, aes(x = nCount_RNA, y = percent.ribo)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    ggtitle(paste("Counts vs percent.ribo -", s))
+
+  p2 <- ggplot(df, aes(x = nCount_RNA, y = percent.hb)) +
+    geom_point(alpha = 0.3, size = 0.5) +
+    ggtitle(paste("Counts vs percent.hb -", s))
+
+  print(p1 + p2)
+}
+```
+
+## 6. Doublet detection
+
+```{r doublet-table, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  seu <- seu_list[[s]]
+
+  if ("scDblFinder.class" %in% colnames(seu@meta.data)) {
+    tbl <- table(seu$scDblFinder.class)
+    pct <- round(100 * tbl["doublet"] / sum(tbl), 1)
+    cat("Singlet:", tbl["singlet"], "| Doublet:", tbl["doublet"],
+        "| % Doublet:", pct, "%\n\n")
+  } else {
+    cat("Doublet detection not available\n\n")
+  }
+}
+```
+
+```{r doublet-barplot, fig.width=8, fig.height=4}
+if ("scDblFinder.class" %in% colnames(combined_meta)) {
+
+  doublet_summary <- do.call(rbind, lapply(names(seu_list), function(s) {
+    seu <- seu_list[[s]]
+    data.frame(
+      sample = s,
+      pct_doublet = 100 * mean(seu$scDblFinder.class == "doublet")
+    )
+  }))
+
+  ggplot(doublet_summary, aes(x = sample, y = pct_doublet, fill = sample)) +
+    geom_col() +
+    geom_hline(yintercept = 5, linetype = "dashed", color = "red") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+    ylab("% Doublets") +
+    ggtitle("Doublet rate per sample (dashed = 5% reference)")
+}
+```
+
+```{r doublet-violin, fig.width=10, fig.height=4, results='asis'}
+if ("doublet_score" %in% colnames(combined_meta)) {
+
+  for (s in names(seu_list)) {
+
+    cat("\n\n###", s, "\n\n")
+
+    print(
+      VlnPlot(seu_list[[s]], features = "doublet_score", pt.size = 0) +
+        ggtitle(s)
+    )
+  }
+}
+```
+
+## 7. Correlations
+
+```{r correlations, results='asis'}
+for (s in names(seu_list)) {
+
+  cat("\n\n###", s, "\n\n")
+
+  df <- seu_list[[s]]@meta.data
+
+  cor_matrix <- cor(
+    df[, c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo", "percent.hb")],
+    method = "spearman"
+  )
+
+  cat("```\n")
+  print(round(cor_matrix, 3))
+  cat("```\n")
+}
+```
+
+## 8. Conclusions
+
+Notes on sample quality and decisions (fill in while inspecting the plots above):
+
+-   **Samples to exclude (biological):** *(e.g. metastases, non-primary tumor)*
+-   **Samples to exclude (quality):** *(e.g. high MT%, low cell count)*
+-   **Threshold adjustments needed:** *(based on distribution observations)*
+    -   `qc_min_features`:
+    -   `qc_max_features`:
+    -   `qc_min_counts`:
+    -   `qc_max_percent_mt`:
+-   **Doublet removal strategy:**

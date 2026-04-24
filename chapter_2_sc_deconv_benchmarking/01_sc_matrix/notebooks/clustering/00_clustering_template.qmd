@@ -1,32 +1,51 @@
 ---
 title: "Clustering Exploration"
 author: "Juliana Pinto"
-date: today
-format:
-  html:
-    toc: true
-    toc-depth: 3
-    code-fold: true
-    theme: cosmo
+format: html
+editor: visual
 params:
-  dataset_id: "GSExxxxxx"
-  resolution: 0.5
+  dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE, message = FALSE, warning = FALSE,
-  fig.width = 10, fig.height = 7
-)
-```
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
+
+ 1. Copy this template to a dataset-specific file:
+      cp 00_clustering_template.qmd clustering_exploration_<DATASET>.qmd
+    (the copy is gitignored by the **/*_GSE*.qmd rule).
+
+ 2. Open the copy in RStudio — ideally by double-clicking
+    deconv_gastric_cancer.Rproj first, so the working directory is the
+    repo root and here::here() resolves correctly.
+
+ 3. Edit the YAML header above:
+      params:
+        dataset_id: "GSE246662"   # your dataset
+
+ 4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
+    with the green "Render" button in RStudio.
+
+ Alternative: render from the terminal without editing the YAML:
+      quarto render 00_clustering_template.qmd \
+        -P dataset_id:GSE246662 \
+        --output clustering_exploration_GSE246662.html
+
+ This notebook expects that script 07b_clustering.R has already been run
+ for the chosen dataset. It reads clustered_seurat_path and uses
+ cluster_resolutions and dims_to_use from the config. The "mid" resolution
+ (middle element of cluster_resolutions) is used for composition, QC and
+ cross-tab plots.
+================================================================================
+-->
 
 # Clustering: `r params$dataset_id`
 
-Inspects the output of `07b_clustering.R`: UMAP, clusters, per-sample composition, QC per cluster, and known marker genes.
+Inspects the output of `07b_clustering.R`: UMAP at multiple resolutions, per-sample composition, QC per cluster, known marker genes, and resolution comparison.
 
 ## Setup
 
-```{r libs}
+```{r libs, message=FALSE, warning=FALSE}
 library(Seurat)
 library(ggplot2)
 library(patchwork)
@@ -36,14 +55,19 @@ theme_set(theme_classic())
 ```
 
 ```{r load-config}
+# Loads config_<DATASET>.R using params$dataset_id. Paths resolve via here::here(),
+# which requires this notebook to be run from the repo root (RStudio opens the
+# project at the root automatically when you launch via the .Rproj file).
 config_path <- file.path(
-  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix", "scripts", "01_sc_pre_proc", "configs"),
+  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+             "scripts", "01_sc_pre_proc", "configs"),
   paste0("config_", params$dataset_id, ".R")
 )
 source(config_path)
 ```
 
-```{r helper}
+```{r helper-function}
+# Helper: map Ensembl IDs to gene symbols
 ens_to_label <- function(ensembl_ids, seu) {
   if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
     gene_meta <- seu[["RNA"]]@meta.data
@@ -52,118 +76,268 @@ ens_to_label <- function(ensembl_ids, seu) {
     labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
     return(unname(labels))
   }
-  ensembl_ids
+  return(ensembl_ids)
 }
 
-# Looks up an Ensembl ID from a gene symbol
-symbol_to_ens <- function(symbol, seu) {
-  gene_meta <- seu[["RNA"]]@meta.data
-  hits <- rownames(seu)[!is.na(gene_meta$gene_symbol) &
-                        gene_meta$gene_symbol == symbol]
-  if (length(hits) == 0) return(NA_character_)
-  hits[1]
-}
-
-feature_plot_labeled <- function(seu, symbols) {
-  ens_ids <- vapply(symbols, symbol_to_ens, character(1), seu = seu)
-  valid <- !is.na(ens_ids)
-  if (!any(valid)) return(NULL)
-  p <- FeaturePlot(seu, features = ens_ids[valid], order = TRUE,
-                   combine = FALSE)
-  for (i in seq_along(p)) {
-    p[[i]] <- p[[i]] + ggtitle(symbols[valid][i])
+# Helper: FeaturePlot with gene symbol titles
+feature_plot_labeled <- function(seu, ensembl_ids, symbols, ...) {
+  plots <- list()
+  for (i in seq_along(ensembl_ids)) {
+    label <- ens_to_label(ensembl_ids[i], seu)
+    plots[[i]] <- FeaturePlot(seu, features = ensembl_ids[i], order = TRUE, ...) +
+      ggtitle(label)
   }
-  wrap_plots(p)
+  wrap_plots(plots, ncol = 2)
 }
 ```
 
-```{r load-clustered}
+```{r load-object}
 seu <- readRDS(clustered_seurat_path)
-cluster_col <- paste0("RNA_snn_res.", params$resolution)
-Idents(seu) <- cluster_col
 
-cat("Cells:", ncol(seu), "\n")
-cat("Clusters at res", params$resolution, ":",
-    length(unique(seu@meta.data[[cluster_col]])), "\n")
-cat("Samples:", paste(unique(seu$orig.ident), collapse = ", "), "\n")
+cat("Dataset:   ", params$dataset_id, "\n")
+cat("Dimensions:", nrow(seu), "genes x", ncol(seu), "cells\n")
+cat("Samples:   ", length(unique(seu$orig.ident)), "\n")
+cat("Reductions:", paste(names(seu@reductions), collapse = ", "), "\n")
+cat("dims_to_use:", min(dims_to_use), "-", max(dims_to_use), "\n")
 ```
 
-## 1. UMAP
+## 1. UMAP - Clusters at different resolutions
 
-```{r umap}
-p1 <- DimPlot(seu, group.by = cluster_col, label = TRUE) +
-  ggtitle(paste("Clusters (res", params$resolution, ")")) + NoLegend()
-p2 <- DimPlot(seu, group.by = "orig.ident") +
-  ggtitle("Sample")
+```{r umap-resolutions, fig.width=14, fig.height=10}
+plots_res <- list()
+for (res in cluster_resolutions) {
+  col_name <- paste0("RNA_snn_res.", res)
+  if (col_name %in% colnames(seu@meta.data)) {
+    n_cl <- length(unique(seu@meta.data[[col_name]]))
+    plots_res[[as.character(res)]] <- DimPlot(seu, group.by = col_name, label = TRUE) +
+      ggtitle(paste0("res = ", res, " (", n_cl, " clusters)")) +
+      NoLegend()
+  }
+}
+
+wrap_plots(plots_res, ncol = 2)
+```
+
+## 2. UMAP - By sample
+
+```{r umap-sample, fig.width=10, fig.height=6}
+DimPlot(seu, group.by = "orig.ident") +
+  ggtitle("UMAP by sample")
+```
+
+```{r umap-split-sample, fig.width=14, fig.height=5}
+DimPlot(seu, group.by = "orig.ident", split.by = "orig.ident", ncol = 4) +
+  ggtitle("UMAP split by sample") +
+  NoLegend()
+```
+
+## 3. Cluster composition per sample
+
+```{r cluster-composition, fig.width=12, fig.height=6}
+mid_res <- cluster_resolutions[ceiling(length(cluster_resolutions) / 2)]
+mid_col <- paste0("RNA_snn_res.", mid_res)
+
+df_comp <- seu@meta.data %>%
+  group_by(across(all_of(c("orig.ident", mid_col)))) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(orig.ident) %>%
+  mutate(pct = n / sum(n) * 100)
+
+colnames(df_comp)[2] <- "cluster"
+
+p1 <- ggplot(df_comp, aes(x = orig.ident, y = pct, fill = cluster)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle(paste("Cluster composition per sample (res", mid_res, ")")) +
+  ylab("% cells") + xlab(NULL)
+
+p2 <- ggplot(df_comp, aes(x = cluster, y = pct, fill = orig.ident)) +
+  geom_col() +
+  ggtitle(paste("Sample composition per cluster (res", mid_res, ")")) +
+  ylab("% cells") + xlab("Cluster")
+
 p1 + p2
 ```
 
-## 2. Resolutions overview
+## 4. Cluster sizes
 
-```{r umap-multi-res, fig.height=10}
-res_cols <- grep("^RNA_snn_res", colnames(seu@meta.data), value = TRUE)
-plots <- lapply(res_cols, function(rc) {
-  DimPlot(seu, group.by = rc, label = TRUE) +
-    ggtitle(rc) + NoLegend()
-})
-wrap_plots(plots, ncol = 2)
+```{r cluster-sizes}
+for (res in cluster_resolutions) {
+  col_name <- paste0("RNA_snn_res.", res)
+  if (col_name %in% colnames(seu@meta.data)) {
+    counts <- sort(table(seu@meta.data[[col_name]]), decreasing = TRUE)
+    cat("\nResolution", res, "- Cluster sizes:\n")
+    for (cl in names(counts)) {
+      cat(sprintf("  Cluster %s: %d cells (%.1f%%)\n",
+                  cl, counts[cl], 100 * counts[cl] / ncol(seu)))
+    }
+  }
+}
 ```
 
-## 3. Composition per sample
+## 5. QC metrics per cluster
 
-```{r composition}
-df <- seu@meta.data %>%
-  group_by(orig.ident, .data[[cluster_col]]) %>%
-  summarise(n = n(), .groups = "drop") %>%
-  group_by(orig.ident) %>% mutate(pct = n / sum(n) * 100)
+```{r qc-per-cluster, fig.width=14, fig.height=10}
+mid_col <- paste0("RNA_snn_res.", mid_res)
+Idents(seu) <- mid_col
 
-ggplot(df, aes(x = orig.ident, y = pct, fill = .data[[cluster_col]])) +
-  geom_col() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  ggtitle("Cluster composition per sample") +
-  ylab("% cells") + xlab(NULL)
+qc_features <- c("nCount_RNA", "nFeature_RNA")
+if ("percent.mt"   %in% colnames(seu@meta.data)) qc_features <- c(qc_features, "percent.mt")
+if ("percent.ribo" %in% colnames(seu@meta.data)) qc_features <- c(qc_features, "percent.ribo")
+
+plots_qc <- list()
+for (feat in qc_features) {
+  plots_qc[[feat]] <- VlnPlot(seu, features = feat, pt.size = 0) +
+    ggtitle(feat) + NoLegend()
+}
+
+wrap_plots(plots_qc, ncol = 2)
 ```
 
-## 4. QC per cluster
+## 6. Feature plots - Known marker genes
 
-```{r qc-per-cluster, fig.height=8}
-metrics <- c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo")
-plots <- lapply(metrics, function(m) {
-  VlnPlot(seu, features = m, group.by = cluster_col, pt.size = 0) +
-    NoLegend() + ggtitle(m)
-})
-wrap_plots(plots, ncol = 2)
+```{r known-markers-setup}
+# Known gastric / immune marker genes (symbols)
+known_markers <- list(
+  "Epithelial"  = c("EPCAM", "KRT18", "KRT19", "CDH1"),
+  "T cells"     = c("CD3D", "CD3E", "CD4", "CD8A"),
+  "B cells"     = c("CD79A", "MS4A1", "CD19"),
+  "Myeloid"     = c("CD14", "LYZ", "CD68", "ITGAM"),
+  "Fibroblasts" = c("COL1A1", "DCN", "VIM"),
+  "Endothelial" = c("PECAM1", "VWF", "CDH5")
+)
+
+# Build symbol -> Ensembl lookup
+gene_meta <- seu[["RNA"]]@meta.data
+symbol_to_ens <- setNames(rownames(seu), gene_meta$gene_symbol)
 ```
 
-## 5. Known markers (edit per dataset)
+```{r known-markers-epithelial, fig.width=14, fig.height=10}
+cell_type <- "Epithelial"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
 
-```{r markers-epithelial}
-feature_plot_labeled(seu, c("EPCAM", "KRT8", "KRT18"))
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
 ```
 
-```{r markers-tcell}
-feature_plot_labeled(seu, c("CD3D", "CD3E", "CD8A", "CD4"))
+```{r known-markers-tcells, fig.width=14, fig.height=10}
+cell_type <- "T cells"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
+
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
 ```
 
-```{r markers-bcell}
-feature_plot_labeled(seu, c("CD79A", "MS4A1", "JCHAIN"))
+```{r known-markers-bcells, fig.width=14, fig.height=8}
+cell_type <- "B cells"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
+
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
 ```
 
-```{r markers-myeloid}
-feature_plot_labeled(seu, c("LYZ", "CD68", "S100A8", "S100A9"))
+```{r known-markers-myeloid, fig.width=14, fig.height=10}
+cell_type <- "Myeloid"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
+
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
 ```
 
-```{r markers-fibroblast-endothelial}
-feature_plot_labeled(seu, c("COL1A1", "DCN", "PECAM1", "VWF"))
+```{r known-markers-fibroblasts, fig.width=14, fig.height=8}
+cell_type <- "Fibroblasts"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
+
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
 ```
 
-## 6. Notes / decisions
+```{r known-markers-endothelial, fig.width=14, fig.height=8}
+cell_type <- "Endothelial"
+symbols <- known_markers[[cell_type]]
+ensembl_ids <- symbol_to_ens[symbols]
+found <- ensembl_ids[!is.na(ensembl_ids)]
+cat(cell_type, "- found:", length(found), "/", length(symbols), "\n")
 
-- Working resolution:
-- Clusters that look biologically distinct:
-- Clusters that may need merging / splitting:
-- Suspect clusters (low QC, doublets, mixed markers):
+feature_plot_labeled(seu, found, symbols) +
+  plot_annotation(title = cell_type)
+```
 
----
+## 7. Resolution comparison
 
-*Render: `quarto render 00_clustering_template.qmd -P dataset_id:GSExxxxxx -P resolution:0.5 --output clustering_exploration_GSExxxxxx.html`*
+```{r resolution-tree, fig.width=10, fig.height=8}
+if (length(cluster_resolutions) >= 2) {
+  res_low  <- cluster_resolutions[1]
+  res_high <- cluster_resolutions[length(cluster_resolutions)]
+
+  col_low  <- paste0("RNA_snn_res.", res_low)
+  col_high <- paste0("RNA_snn_res.", res_high)
+
+  cross_tab <- table(
+    low  = seu@meta.data[[col_low]],
+    high = seu@meta.data[[col_high]]
+  )
+
+  cat("Cross-tabulation: res", res_low, "vs res", res_high, "\n\n")
+  print(cross_tab)
+
+  cross_df <- as.data.frame(cross_tab)
+  colnames(cross_df) <- c("low_res", "high_res", "n_cells")
+
+  ggplot(cross_df, aes(x = high_res, y = low_res, fill = n_cells)) +
+    geom_tile() +
+    geom_text(aes(label = ifelse(n_cells > 0, n_cells, "")), size = 3) +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    ggtitle(paste("Cluster mapping: res", res_low, "->", res_high)) +
+    xlab(paste("Clusters at res", res_high)) +
+    ylab(paste("Clusters at res", res_low))
+}
+```
+
+## 8. Summary
+
+```{r summary}
+stdev <- seu[["pca"]]@stdev
+var_explained <- (stdev^2 / sum(stdev^2)) * 100
+
+cat("Dataset: ", params$dataset_id, "\n")
+cat("Cells:   ", ncol(seu), "\n")
+cat("Genes:   ", nrow(seu), "\n")
+cat("Samples: ", length(unique(seu$orig.ident)), "\n")
+cat("PCs used:", min(dims_to_use), "-", max(dims_to_use), "\n")
+cat("Variance explained (selected PCs):",
+    round(sum(var_explained[dims_to_use]), 1), "%\n")
+cat("\nClusters per resolution:\n")
+for (res in cluster_resolutions) {
+  col_name <- paste0("RNA_snn_res.", res)
+  if (col_name %in% colnames(seu@meta.data)) {
+    cat("  res", res, ":", length(unique(seu@meta.data[[col_name]])), "clusters\n")
+  }
+}
+```
+
+## 9. Conclusions
+
+Notes (fill in while inspecting the plots above):
+
+-   **Batch effect**: Do samples mix well in UMAP? *(if not, integration is critical)*
+-   **Cluster composition**: Are clusters driven by biology or by sample? *(sample-dominated clusters may indicate batch effects)*
+-   **QC metrics**: Any cluster with unusually high %MT or low nFeature? *(may be low-quality cells that escaped filtering)*
+-   **Known markers**: Do clusters show expected marker expression? *(helps validate clustering resolution)*
+-   **Resolution choice**: Which resolution best separates known cell types without over-splitting?
+-   **Action**: If `dims_to_use` or `cluster_resolutions` need adjustment, update the config and re-run only `07b_clustering.R`

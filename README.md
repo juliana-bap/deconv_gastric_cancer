@@ -290,4 +290,5 @@ Install from <https://quarto.org/docs/get-started/> (version ≥ 1.4).
 
 Juliana Barreto Albuquerque Pinto
 PhD candidate — Universidade Federal do Pará (UFPA)
-Contact: fcmoreira@ufpa.br
+Contact: juliana.pinto@icb.ufpa.br
+         jualbup@gmail.com

@@ -26,7 +26,13 @@ config_path <- normalizePath(args[1])
 source(config_path)
 
 # ---- Locate Python script ----
-python_script <- file.path(project_root, "scripts", "sc_pre_proc", "pipeline", "09b_celltypist.py")
+# The Python script lives in the same pipeline directory as this R wrapper.
+python_script <- file.path(
+  project_root,
+  "chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+  "scripts", "01_sc_pre_proc", "pipeline",
+  "09b_celltypist.py"
+)
 
 if (!file.exists(python_script)) {
   stop("Python script not found: ", python_script)
