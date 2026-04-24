@@ -1,31 +1,50 @@
 ---
 title: "Normalization & HVG Exploration"
 author: "Juliana Pinto"
-date: today
-format:
-  html:
-    toc: true
-    toc-depth: 3
-    code-fold: true
-    theme: cosmo
+format: html
+editor: visual
 params:
-  dataset_id: "GSExxxxxx"
+  dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE, message = FALSE, warning = FALSE,
-  fig.width = 9, fig.height = 6
-)
-```
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
 
-# Normalization: `r params$dataset_id`
+ 1. Copy this template to a dataset-specific file:
+      cp 00_norm_template.qmd norm_exploration_<DATASET>.qmd
+    (the copy is gitignored by the **/*_GSE*.qmd rule).
 
-Inspects the output of `06_normalize_hvg.R`: normalization quality, HVG selection, and a top-HVG sanity check with gene symbols.
+ 2. Open the copy in RStudio — ideally by double-clicking
+    deconv_gastric_cancer.Rproj first, so the working directory is the
+    repo root and here::here() resolves correctly.
+
+ 3. Edit the YAML header above:
+      params:
+        dataset_id: "GSE246662"   # your dataset
+
+ 4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
+    with the green "Render" button in RStudio.
+
+ Alternative: render from the terminal without editing the YAML:
+      quarto render 00_norm_template.qmd \
+        -P dataset_id:GSE246662 \
+        --output norm_exploration_GSE246662.html
+
+ This notebook expects that scripts 05_merge.R and 06_normalize_hvg.R
+ have already been run for the chosen dataset. It reads:
+   - merged_seurat_path (pre-normalization)
+   - norm_seurat_path   (post-normalization + HVG)
+================================================================================
+-->
+
+# Normalization & HVG: `r params$dataset_id`
+
+Exploratory inspection of the normalization and HVG selection produced by `06_normalize_hvg.R`. Use this notebook to validate the normalization strategy (RC, scale factor, no log) and to check whether the selected HVGs make biological sense.
 
 ## Setup
 
-```{r libs}
+```{r libs, message=FALSE, warning=FALSE}
 library(Seurat)
 library(ggplot2)
 library(patchwork)
@@ -34,15 +53,21 @@ theme_set(theme_classic())
 ```
 
 ```{r load-config}
+# Loads config_<DATASET>.R using params$dataset_id. Paths resolve via here::here(),
+# which requires this notebook to be run from the repo root (RStudio opens the
+# project at the root automatically when you launch via the .Rproj file).
 config_path <- file.path(
-  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix", "scripts", "01_sc_pre_proc", "configs"),
+  here::here("chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+             "scripts", "01_sc_pre_proc", "configs"),
   paste0("config_", params$dataset_id, ".R")
 )
 source(config_path)
 ```
 
-```{r helper}
-# Map Ensembl IDs to gene symbols using the feature metadata
+```{r helper-function}
+# Helper: map Ensembl IDs to gene symbols
+# Returns symbol if available, otherwise keeps Ensembl ID
+# Uses named vector lookup (feature metadata rownames are numeric, not Ensembl)
 ens_to_label <- function(ensembl_ids, seu) {
   if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
     gene_meta <- seu[["RNA"]]@meta.data
@@ -51,67 +76,182 @@ ens_to_label <- function(ensembl_ids, seu) {
     labels[is.na(labels) | labels == ""] <- ensembl_ids[is.na(labels) | labels == ""]
     return(unname(labels))
   }
-  ensembl_ids
+  return(ensembl_ids)
 }
 ```
 
 ```{r load-objects}
+# Merged (pre-normalization)
 seu_merged <- readRDS(merged_seurat_path)
-seu_norm   <- readRDS(norm_seurat_path)
+
+# Normalized (post-normalization + HVG)
+seu_norm <- readRDS(norm_seurat_path)
 
 cat("Merged:    ", ncol(seu_merged), "cells x", nrow(seu_merged), "genes\n")
-cat("Normalized:", ncol(seu_norm),   "cells x", nrow(seu_norm),   "genes\n")
+cat("Normalized:", ncol(seu_norm),  "cells x", nrow(seu_norm),  "genes\n")
 cat("HVGs:      ", length(VariableFeatures(seu_norm)), "\n")
 ```
 
-## 1. Counts vs normalized values per cell
+## 1. Count distribution before vs after normalization
 
-```{r count-distributions}
-df <- data.frame(
-  total_counts = colSums(LayerData(seu_merged, layer = "counts")),
-  norm_counts  = colSums(LayerData(seu_norm,   layer = "data"))
-)
+```{r count-distribution, fig.width=12, fig.height=5}
+set.seed(42)
+cells_sample <- sample(colnames(seu_merged), min(500, ncol(seu_merged)))
 
-p1 <- ggplot(df, aes(x = total_counts)) +
-  geom_histogram(bins = 60, fill = "steelblue") + scale_x_log10() +
-  ggtitle("Raw counts per cell (log10)")
+# Raw and normalized counts for one representative cell
+raw_counts  <- GetAssayData(seu_merged, layer = "counts")[, cells_sample[1]]
+norm_counts <- GetAssayData(seu_norm,   layer = "data")[, cells_sample[1]]
 
-p2 <- ggplot(df, aes(x = norm_counts)) +
-  geom_histogram(bins = 60, fill = "darkorange") +
-  ggtitle("Normalized values per cell")
+p1 <- ggplot(data.frame(x = raw_counts[raw_counts > 0]), aes(x = x)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  ggtitle("Raw counts (1 cell)") +
+  xlab("Counts")
+
+p2 <- ggplot(data.frame(x = norm_counts[norm_counts > 0]), aes(x = x)) +
+  geom_histogram(bins = 50, fill = "darkorange", color = "white") +
+  ggtitle("Normalized counts (1 cell)") +
+  xlab("Normalized expression")
 
 p1 + p2
 ```
 
-## 2. Mean-variance / HVG plot
+## 2. Library size distribution per sample
 
-```{r hvg-plot}
+```{r library-size, fig.width=10, fig.height=5}
+df_merged <- seu_merged@meta.data
+df_merged$sample <- seu_merged$orig.ident
+
+p1 <- ggplot(df_merged, aes(x = sample, y = nCount_RNA, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("Library size per sample (raw)")
+
+# After normalization
+norm_lib_size <- colSums(GetAssayData(seu_norm, layer = "data"))
+df_norm <- data.frame(
+  sample = seu_norm$orig.ident,
+  norm_total = norm_lib_size
+)
+
+p2 <- ggplot(df_norm, aes(x = sample, y = norm_total, fill = sample)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  ggtitle("Total expression per sample (normalized)")
+
+p1 + p2
+```
+
+```{r free-merged}
+rm(seu_merged)
+gc()
+```
+
+## 3. Highly Variable Genes
+
+```{r hvg-plot, fig.width=12, fig.height=6}
 top10 <- head(VariableFeatures(seu_norm), 10)
 top10_labels <- ens_to_label(top10, seu_norm)
 
-vfp <- VariableFeaturePlot(seu_norm)
-LabelPoints(plot = vfp, points = top10, labels = top10_labels, repel = TRUE)
+plot1 <- VariableFeaturePlot(seu_norm)
+
+# Label with gene symbols
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE,
+                     labels = top10_labels)
+
+plot1 + plot2 + plot_annotation(title = paste("HVGs -", params$dataset_id))
 ```
 
-## 3. Top HVGs (with gene symbols)
+### Top 20 HVGs
 
 ```{r top-hvgs}
-hvgs <- VariableFeatures(seu_norm)
+top20 <- head(VariableFeatures(seu_norm), 20)
+top20_labels <- ens_to_label(top20, seu_norm)
+
 hvg_table <- data.frame(
-  rank   = seq_along(head(hvgs, 30)),
-  ens_id = head(hvgs, 30),
-  symbol = ens_to_label(head(hvgs, 30), seu_norm)
+  rank = 1:20,
+  ensembl_id = top20,
+  gene_symbol = top20_labels,
+  mapped = ifelse(top20_labels != top20, "yes", "no")
 )
-knitr::kable(hvg_table, caption = "Top 30 HVGs")
+
+knitr::kable(hvg_table, caption = "Top 20 Highly Variable Genes")
 ```
 
-## 4. Notes / decisions
+### HVG overlap with QC genes
 
-- Normalization method:
-- Number of HVGs:
-- Genes that were unexpected / interesting:
-- Anything to revise before PCA:
+Check whether mitochondrial, ribosomal or hemoglobin genes are among the HVGs — they usually should not be. Presence may indicate incomplete filtering (MT) or contamination (HB: erythrocytes).
 
----
+```{r hvg-qc-check}
+hvgs       <- VariableFeatures(seu_norm)
+hvg_labels <- ens_to_label(hvgs, seu_norm)
 
-*Render: `quarto render 00_norm_template.qmd -P dataset_id:GSExxxxxx --output norm_exploration_GSExxxxxx.html`*
+mt_in_hvg   <- hvgs[grepl(mito_pattern, hvg_labels)]
+ribo_in_hvg <- hvgs[grepl(ribo_pattern, hvg_labels)]
+hb_in_hvg   <- hvgs[grepl(hb_pattern,   hvg_labels)]
+
+cat("Mitochondrial genes in HVGs:", length(mt_in_hvg), "\n")
+if (length(mt_in_hvg) > 0) cat("  ", ens_to_label(mt_in_hvg, seu_norm), "\n")
+
+cat("Ribosomal genes in HVGs:   ", length(ribo_in_hvg), "\n")
+if (length(ribo_in_hvg) > 0) cat("  ", ens_to_label(ribo_in_hvg, seu_norm), "\n")
+
+cat("Hemoglobin genes in HVGs:  ", length(hb_in_hvg), "\n")
+if (length(hb_in_hvg) > 0) cat("  ", ens_to_label(hb_in_hvg, seu_norm), "\n")
+```
+
+## 4. Mean expression vs variance
+
+```{r mean-var, fig.width=8, fig.height=6}
+hvg_info <- HVFInfo(seu_norm)
+hvg_info$is_hvg <- rownames(hvg_info) %in% VariableFeatures(seu_norm)
+
+ggplot(hvg_info, aes(x = mean, y = variance, color = is_hvg)) +
+  geom_point(size = 0.5, alpha = 0.3) +
+  scale_color_manual(values = c("grey70", "red")) +
+  scale_x_log10() +
+  scale_y_log10() +
+  ggtitle("Mean expression vs Variance") +
+  labs(color = "HVG")
+```
+
+## 5. Expression of top HVGs across samples
+
+```{r hvg-violin, fig.width=12, fig.height=8}
+top6 <- head(VariableFeatures(seu_norm), 6)
+top6_labels <- ens_to_label(top6, seu_norm)
+
+plots <- list()
+for (i in seq_along(top6)) {
+  plots[[i]] <- VlnPlot(seu_norm, features = top6[i], pt.size = 0) +
+    ggtitle(paste0(top6_labels[i], " (", top6[i], ")"))
+}
+
+wrap_plots(plots, ncol = 3)
+```
+
+## 6. Summary
+
+```{r summary}
+cat("Dataset:       ", params$dataset_id, "\n")
+cat("Cells:         ", ncol(seu_norm), "\n")
+cat("Genes:         ", nrow(seu_norm), "\n")
+cat("Normalization: ", norm_method, "/ scale factor:", scale_factor, "\n")
+cat("HVG method:    ", hvg_method, "/ n:", n_hvg, "\n")
+cat("HVGs identified:", length(VariableFeatures(seu_norm)), "\n")
+
+# Gene symbol mapping stats
+if ("gene_symbol" %in% colnames(seu_norm[["RNA"]]@meta.data)) {
+  gs <- seu_norm[["RNA"]]@meta.data$gene_symbol
+  cat("Gene symbols mapped:  ", sum(!is.na(gs) & gs != ""), "/", length(gs), "\n")
+  cat("Unmapped (Ensembl only):", sum(is.na(gs) | gs == ""), "\n")
+}
+```
+
+## 7. Conclusions
+
+Notes (fill in while inspecting the plots above):
+
+-   **HVGs look reasonable?** *(check if top genes make biological sense)*
+-   **MT / Ribo / HB genes in HVGs?** *(flag if present — MT/Ribo = incomplete filtering; HB = erythrocyte contamination)*
+-   **Adjust `n_hvg`?** *(2000 is standard, may need more/less depending on heterogeneity)*
+-   **Unmapped genes:** some HVGs may show only Ensembl IDs (e.g. immunoglobulin loci not in the mapping table)
