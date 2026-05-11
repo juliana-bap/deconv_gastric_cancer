@@ -63,7 +63,18 @@ __pycache__/
 CLAUDE.md
 docs/ONBOARDING.md
 chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports
-chapter_1_review/ARTIGO - Cenário Imune do CG.docx
+!chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/00_dataset_report_template.md
+
+# AI agent context files (local-only, not for public repo)
+**/ONBOARDING_CLAUDE.md
+**/CLAUDE_*.md
+**/AGENTS.md
+**/.cursorrules
+**/.aider*
+
+# Chapter 1 drafts (article manuscripts - not ready for public repo)
+chapter_1_review/**
+!chapter_1_review/.gitkeep
 
 # Claude session backup (local-only context transfer)
 .claude_backup/
