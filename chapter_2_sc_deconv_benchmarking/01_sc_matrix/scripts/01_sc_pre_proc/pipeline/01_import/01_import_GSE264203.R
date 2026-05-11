@@ -83,7 +83,8 @@ dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ---- Map suffixes to sample names (from config, if available) ----
 # suffix_to_sample allows renaming: c("1"="GC1", "2"="GC2", ...)
-# If NULL, uses generic names: GSE264203_sample_1, GSE264203_sample_2, ...
+# If NULL (or not defined in config), uses generic names: GSE264203_sample_1, GSE264203_sample_2, ...
+if (!exists("suffix_to_sample")) suffix_to_sample <- NULL
 
 for (s in unique_suffixes) {
 

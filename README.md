@@ -81,14 +81,17 @@ Each script is **modular** and reads all inputs/outputs from a per-dataset confi
 ### Running a script
 
 ```bash
-# From the repo root (required for here::here() to work)
-cd ~/doutorado/deconv_gastric_cancer
+# Navigate to the repository root (the folder you cloned — NOT your home directory)
+cd /path/to/deconv_gastric_cancer
 
 Rscript chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pipeline/<script>.R \
         chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_<DATASET>.R
 ```
 
-> **Note:** always run from within the repository directory so that `here::here()` correctly detects the project root.
+> **⚠️ Important — project root vs. home directory:**
+> All scripts must be run from **inside the cloned repository folder** (e.g., `~/doutorado/deconv_gastric_cancer`), not from your home directory (`~`) or any other location.
+> `here::here()` detects the project root by looking for the `.Rproj` file. If you run scripts from the wrong directory, all paths will break silently.
+> Quick check: `ls` should show `README.md`, `chapter_2_sc_deconv_benchmarking/`, etc. at your current location.
 
 ### Pipeline steps
 
