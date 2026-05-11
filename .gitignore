@@ -62,7 +62,7 @@ __pycache__/
 # Project-internal docs (not needed by external users)
 CLAUDE.md
 docs/ONBOARDING.md
-chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports
+chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/*
 !chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/00_dataset_report_template.md
 
 # AI agent context files (local-only, not for public repo)
