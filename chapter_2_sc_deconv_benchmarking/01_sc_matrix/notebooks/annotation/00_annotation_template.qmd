@@ -218,8 +218,8 @@ knitr::kable(consensus, caption = "Dominant annotation per cluster (% agreement)
 ```{r confusion-hpca, fig.width=14, fig.height=8}
 if ("singler_hpca" %in% colnames(seu@meta.data)) {
   ct <- table(
-    Cluster = seu@meta.data[[annotation_cluster_col]],
-    HPCA    = seu$singler_hpca
+    Cluster = as.character(seu@meta.data[[annotation_cluster_col]]),
+    HPCA    = as.character(seu$singler_hpca)
   )
   ct_prop <- prop.table(ct, margin = 1) * 100
 
@@ -241,8 +241,8 @@ if ("singler_hpca" %in% colnames(seu@meta.data)) {
 ```{r confusion-blueprint, fig.width=14, fig.height=8}
 if ("singler_blueprint" %in% colnames(seu@meta.data)) {
   ct <- table(
-    Cluster   = seu@meta.data[[annotation_cluster_col]],
-    Blueprint = seu$singler_blueprint
+    Cluster   = as.character(seu@meta.data[[annotation_cluster_col]]),
+    Blueprint = as.character(seu$singler_blueprint)
   )
   ct_prop <- prop.table(ct, margin = 1) * 100
 
@@ -264,8 +264,8 @@ if ("singler_blueprint" %in% colnames(seu@meta.data)) {
 ```{r confusion-ct-hpca, fig.width=16, fig.height=10}
 if (all(c("celltypist_label", "singler_hpca") %in% colnames(seu@meta.data))) {
   ct <- table(
-    CellTypist = seu$celltypist_label,
-    HPCA       = seu$singler_hpca
+    CellTypist = as.character(seu$celltypist_label),
+    HPCA       = as.character(seu$singler_hpca)
   )
   ct_prop <- prop.table(ct, margin = 1) * 100
 
@@ -287,8 +287,8 @@ if (all(c("celltypist_label", "singler_hpca") %in% colnames(seu@meta.data))) {
 ```{r confusion-ct-bp, fig.width=16, fig.height=10}
 if (all(c("celltypist_label", "singler_blueprint") %in% colnames(seu@meta.data))) {
   ct <- table(
-    CellTypist = seu$celltypist_label,
-    Blueprint  = seu$singler_blueprint
+    CellTypist = as.character(seu$celltypist_label),
+    Blueprint  = as.character(seu$singler_blueprint)
   )
   ct_prop <- prop.table(ct, margin = 1) * 100
 

@@ -78,3 +78,9 @@ chapter_1_review/**
 
 # Claude session backup (local-only context transfer)
 .claude_backup/
+
+# Claude desktop app output folder
+Claude outputs/
+
+# Dataset metadata (GEO downloads, not versioned)
+data/sc_reference/metadata/

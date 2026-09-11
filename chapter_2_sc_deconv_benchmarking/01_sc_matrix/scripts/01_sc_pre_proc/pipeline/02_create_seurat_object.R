@@ -77,6 +77,9 @@ for (i in seq_along(rds_files)) {
     min.features = min_features
   )
 
+  seu$orig.ident <- samp
+  Idents(seu) <- "orig.ident"
+  
   cat("After filtering (min.cells=", min_cells, ", min.features=", min_features, "):",
       nrow(seu), "genes x", ncol(seu), "cells\n")
 
@@ -101,6 +104,29 @@ for (i in seq_along(rds_files)) {
 
   cat("dataset_id:", dataset_id, "\n")
   cat("sample_id:", gsm_id, "\n")
+
+  # ---- Add supplementary metadata (optional, sample-level -> all cells) ----
+  # supplementary_metadata_path is defined in config (NULL = skip).
+  # Expected format: CSV or TSV with a column matching sample_id / GSM IDs.
+  if (!is.null(supplementary_metadata_path) && file.exists(supplementary_metadata_path)) {
+    supp_meta <- read.csv(supplementary_metadata_path, stringsAsFactors = FALSE,
+                          sep = ifelse(grepl("\\.tsv$|\\.txt$", supplementary_metadata_path), "\t", ","))
+    # Try to match by sample_id column or rownames
+    id_col <- intersect(c("sample_id", "gsm_id", "GSM", "Sample", "SampleID"), colnames(supp_meta))
+    if (length(id_col) > 0) {
+      row_match <- which(supp_meta[[id_col[1]]] == gsm_id)
+    } else {
+      row_match <- which(rownames(supp_meta) == gsm_id)
+    }
+    if (length(row_match) == 1) {
+      for (col in setdiff(colnames(supp_meta), id_col)) {
+        seu[[paste0("supp_", col)]] <- as.character(supp_meta[row_match, col])
+      }
+      cat("Supplementary metadata added:", ncol(supp_meta) - length(id_col), "columns\n")
+    } else {
+      cat("WARNING: sample", gsm_id, "not found in supplementary metadata\n")
+    }
+  }
 
   # ---- Add GEO metadata (sample-level -> all cells) ----
   if (!is.null(geo_metadata) && gsm_id %in% rownames(geo_metadata)) {

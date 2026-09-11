@@ -62,15 +62,47 @@ deconv_gastric_cancer/
 
 ## Datasets
 
-Five public gastric cancer scRNA-seq datasets from GEO (subset may change):
+Public gastric cancer scRNA-seq datasets from GEO. The final set of datasets included in the reference matrix is still being defined — datasets are curated progressively as processing is completed.
 
-| GEO ID | Format | Notes | Status |
-|--------|--------|-------|--------|
-| GSE163558 | 10X (Read10X) | **Pilot** — full pipeline completed | ✅ Done |
-| GSE246662 | CSV | Requires matrix orientation fix | 🔬 In progress |
-| GSE264203 | H5 | Split by barcode suffix | 🗓️ Pending |
-| GSE291080 | 10X (Read10X) | Excludes sample GSM8828843_a187_es | 🗓️ Pending |
-| GSE201347 | Seurat RDS | Large dataset, processed on HPC (PBS) | 🔬 In progress |
+| GEO ID | Format | Samples (final) | Cells (final) | In matrix | Notes | Status |
+|--------|--------|-----------------|---------------|-----------|-------|--------|
+| [GSE163558](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE163558) | TAR (MTX/TSV) | 10 | 12,287 | ✅ Yes | **Pilot** — samples removed by biological and quality criteria | ✅ Done |
+| [GSE275648](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275648) | Seurat RDS | 10 (11 raw; GC05 excluded) | 35,942 | ✅ Yes | MT genes removed by authors pre-deposit; see adaptations below | ✅ Done |
+| [GSE246662](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE246662) | TAR (CSV) | 2 (9 raw) | 8,731 | ⏳ TBD | Only 2 samples retained after QC (GC1, GC2) | 🔬 In progress |
+| [GSE264203](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE264203) | H5 | TBD | TBD | ⚠️ Uncertain | No barcode→sample mapping available; awaiting author response | 🗓️ Pending |
+| [GSE291080](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE291080) | 10X (Read10X) | TBD | TBD | ⏳ TBD | Excludes sample GSM8828843 | 🗓️ Pending |
+| [GSE201347](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE201347) | Seurat RDS | TBD | TBD | ⏳ TBD | Large dataset, processed on HPC (PBS) | 🔬 In progress |
+
+---
+
+## Dataset-Specific Adaptations
+
+The standard pipeline (scripts 01–09) expects each dataset-specific import script (`01_import/<DATASET>.R`) to output a sparse count matrix with **Ensembl IDs as rownames and original cell barcodes as column names**. Scripts 02 onward are generic.
+
+However, public datasets differ substantially in how they are deposited on GEO, and some require adaptations beyond the import script. These are documented here so that analysts reproducing the pipeline do not have to rediscover them.
+
+### GSE275648 — Seurat objects with MT genes removed
+
+**GEO format:** per-sample `.rds.gz` files, each a pre-processed Seurat object with gene symbols as rownames.
+
+**Adaptations required (beyond standard pipeline):**
+
+1. **MT filtering at import (`01_import_GSE275648.R`).**  
+   The authors removed all mitochondrial genes (`MT-*`) from the count matrix before GEO deposit, but pre-computed `percent.mt` is available in the original Seurat object metadata. Script 03 (`PercentageFeatureSet`) returns 0 for all cells. MT filtering is therefore applied at import using the authors' pre-computed values and the `qc_max_percent_mt` threshold from the config. The real `percent.mt` values are saved to `metadata_dir/<sample>_orig_meta.rds` for each sample.
+
+2. **`percent.mt` patch after script 03 (`01b_patch_mt_GSE275648.R`).**  
+   Because script 03 overwrites `percent.mt` with zeros (by design, via `PercentageFeatureSet`), a dataset-specific patch script must be run between scripts 03 and 04. It reads the `_orig_meta.rds` files and restores the real values into the `_seurat_qc_metrics.rds` objects, so the information propagates through merge, integration, and all downstream notebooks.  
+   **Run order:** `03_qc_metrics.R` → `01b_patch_mt_GSE275648.R` → `04_qc_filtering.R`
+
+3. **`orig.ident` override in script 02.**  
+   The GEO objects carry `orig.ident = "WCH"` (the authors' project name). Seurat v5 preserves this when a count matrix extracted from a pre-existing Seurat object is passed to `CreateSeuratObject`, even when `project = samp` is set. Script 02 therefore includes an explicit override immediately after `CreateSeuratObject`:
+   ```r
+   seu$orig.ident <- samp
+   Idents(seu) <- "orig.ident"
+   ```
+   This issue is specific to datasets deposited as Seurat objects. Datasets deposited as raw matrices (10x MTX, CSV, H5) are not affected.
+
+**Sample exclusion:** GC05 (`GSM8481911`) excluded at config level (`samples_to_exclude_qc`) — 62% MT removal and lowest quality metrics of the dataset.
 
 ---
 
@@ -81,17 +113,14 @@ Each script is **modular** and reads all inputs/outputs from a per-dataset confi
 ### Running a script
 
 ```bash
-# Navigate to the repository root (the folder you cloned — NOT your home directory)
-cd /path/to/deconv_gastric_cancer
+# From the repo root (required for here::here() to work)
+cd ~/doutorado/deconv_gastric_cancer
 
 Rscript chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pipeline/<script>.R \
         chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_<DATASET>.R
 ```
 
-> **⚠️ Important — project root vs. home directory:**
-> All scripts must be run from **inside the cloned repository folder** (e.g., `~/doutorado/deconv_gastric_cancer`), not from your home directory (`~`) or any other location.
-> `here::here()` detects the project root by looking for the `.Rproj` file. If you run scripts from the wrong directory, all paths will break silently.
-> Quick check: `ls` should show `README.md`, `chapter_2_sc_deconv_benchmarking/`, etc. at your current location.
+> **Note:** always run from within the repository directory so that `here::here()` correctly detects the project root.
 
 ### Pipeline steps
 

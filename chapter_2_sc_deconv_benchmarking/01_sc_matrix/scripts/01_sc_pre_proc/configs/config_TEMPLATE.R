@@ -102,6 +102,14 @@ rds_files <- list.files(input_dir, pattern = "\\.rds$", full.names = TRUE)
 min_cells    <- 3      # gene must be detected in at least N cells
 min_features <- 200    # cell must have at least N detected genes
 
+# Supplementary metadata (optional).
+# If the dataset has a supplementary metadata file (CSV or TSV) with
+# per-sample clinical or experimental data, set the path here.
+# The file must have a column matching sample_id / GSM IDs.
+# Columns are added to the Seurat object with prefix "supp_".
+# Set to NULL (default) if no supplementary metadata is available.
+supplementary_metadata_path <- NULL
+
 
 # ============================================================================
 # Script 03 — QC METRICS

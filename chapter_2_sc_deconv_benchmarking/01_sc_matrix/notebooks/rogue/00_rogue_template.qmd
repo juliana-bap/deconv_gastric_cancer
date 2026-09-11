@@ -144,6 +144,8 @@ rogue_long <- as.data.frame(as.table(rogue_mat))
 colnames(rogue_long) <- c("sample", "cluster", "rogue")
 rogue_long$rogue <- as.numeric(rogue_long$rogue)
 rogue_long <- rogue_long[!is.na(rogue_long$rogue), ]
+rogue_long$cluster <- as.character(rogue_long$cluster)
+rogue_long$sample  <- as.character(rogue_long$sample)
 
 ggplot(rogue_long, aes(x = cluster, y = rogue, fill = cluster)) +
   geom_boxplot(outlier.shape = 21) +

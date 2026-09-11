@@ -216,6 +216,10 @@ ggplot(hvg_info, aes(x = mean, y = variance, color = is_hvg)) +
 
 ## 5. Expression of top HVGs across samples
 
+RC normalization produces CPM-scale values (no log). `scale_y_sqrt()` is used
+to make the distribution readable — `sqrt(0) = 0`, so zero-expressed cells are
+handled correctly without a pseudocount.
+
 ```{r hvg-violin, fig.width=12, fig.height=8}
 top6 <- head(VariableFeatures(seu_norm), 6)
 top6_labels <- ens_to_label(top6, seu_norm)
@@ -223,6 +227,7 @@ top6_labels <- ens_to_label(top6, seu_norm)
 plots <- list()
 for (i in seq_along(top6)) {
   plots[[i]] <- VlnPlot(seu_norm, features = top6[i], pt.size = 0) +
+    scale_y_sqrt() +
     ggtitle(paste0(top6_labels[i], " (", top6[i], ")"))
 }
 
