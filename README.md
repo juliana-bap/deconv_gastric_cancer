@@ -64,14 +64,11 @@ deconv_gastric_cancer/
 
 Public gastric cancer scRNA-seq datasets from GEO. The final set of datasets included in the reference matrix is still being defined — datasets are curated progressively as processing is completed.
 
-| GEO ID | Format | Samples (final) | Cells (final) | In matrix | Notes | Status |
-|--------|--------|-----------------|---------------|-----------|-------|--------|
-| [GSE163558](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE163558) | TAR (MTX/TSV) | 10 | 12,287 | ✅ Yes | **Pilot** — samples removed by biological and quality criteria | ✅ Done |
-| [GSE275648](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE275648) | Seurat RDS | 10 (11 raw; GC05 excluded) | 35,942 | ✅ Yes | MT genes removed by authors pre-deposit; see adaptations below | ✅ Done |
-| [GSE246662](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE246662) | TAR (CSV) | 2 (9 raw) | 8,731 | ⏳ TBD | Only 2 samples retained after QC (GC1, GC2) | 🔬 In progress |
-| [GSE264203](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE264203) | H5 | TBD | TBD | ⚠️ Uncertain | No barcode→sample mapping available; awaiting author response | 🗓️ Pending |
-| [GSE291080](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE291080) | 10X (Read10X) | TBD | TBD | ⏳ TBD | Excludes sample GSM8828843 | 🗓️ Pending |
-| [GSE201347](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE201347) | Seurat RDS | TBD | TBD | ⏳ TBD | Large dataset, processed on HPC (PBS) | 🔬 In progress |
+| GEO ID | Status |
+|--------|--------|
+| [GSE163558] | ✅ Done |
+| [GSE275648] | ✅ Done |
+| [GSE201347] | 🔬 In progress |
 
 ---
 
