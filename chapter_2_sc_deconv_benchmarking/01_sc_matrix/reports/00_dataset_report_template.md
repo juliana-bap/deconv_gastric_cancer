@@ -34,8 +34,7 @@
 
 ## 2. Pipeline parameters
 
-> Copy these from `scripts/sc_pre_proc/configs/config_<DATASET_ID>.R`. Highlight in **bold** any value that differs from the pilot (GSE163558) defaults.
-
+> Copy these from `scripts/sc_pre_proc/configs/config_<DATASET_ID>.R`. 
 | Step | Parameter | Value |
 |---|---|---|
 | 02 — Seurat creation | `min_cells` |  |
@@ -63,7 +62,6 @@
 
 ### Why these choices
 
-- _(Document any parameter that differs from the pilot defaults and the reason. If everything matches the pilot, write "All parameters follow the GSE163558 pilot defaults.")_
 
 ---
 
@@ -140,7 +138,7 @@ _(2–3 sentences describing whether the composition matches expectations for th
 
 ## 7. Pipeline issues encountered
 
-> Document any technical issue not already in the pilot report. If everything ran cleanly, write "No new issues — pipeline ran without modification."
+> Document any technical issue. If everything ran cleanly, write "No issues — pipeline ran without modification."
 
 | Issue | Step | Fix |
 |---|---|---|

@@ -7,6 +7,7 @@ params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
+```{=html}
 <!--
 ================================================================================
 HOW TO USE THIS NOTEBOOK
@@ -21,15 +22,15 @@ HOW TO USE THIS NOTEBOOK
 
  3. Edit the YAML header above:
       params:
-        dataset_id: "GSE246662"   # your dataset
+        dataset_id: "GSE163558"   # your dataset
 
  4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
     with the green "Render" button in RStudio.
 
  Alternative: render from the terminal without editing the YAML:
       quarto render 00_dimred_template.qmd \
-        -P dataset_id:GSE246662 \
-        --output dimred_exploration_GSE246662.html
+        -P dataset_id:GSE163558 \
+        --output dimred_exploration_GSE163558.html
 
  This notebook expects that script 07a_dimred.R has already been run for
  the chosen dataset. It reads pca_seurat_path and uses dims_to_use/n_pcs
@@ -37,6 +38,7 @@ HOW TO USE THIS NOTEBOOK
  and only re-run 07b_clustering.R (PCA does not need to be recomputed).
 ================================================================================
 -->
+```
 
 # Dimensionality Reduction: `r params$dataset_id`
 

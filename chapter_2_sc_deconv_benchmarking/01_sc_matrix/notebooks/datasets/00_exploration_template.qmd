@@ -12,10 +12,13 @@ params:
   dataset_id: "GSExxxxxx"
   data_dir: "data/sc_reference/raw/GSExxxxxx"
   # --- Format: choose ONE ---
-  # "csv"  -> CSV files (one per sample)
-  # "10x"  -> 10x Genomics directories (barcodes/features/matrix)
-  # "h5"   -> Single HDF5 file
-  # "rds"  -> RDS file (Seurat object or matrix)
+  # "csv"        -> CSV files (one per sample)
+  # "10x"        -> 10x Genomics directories, one per sample (barcodes/features/matrix)
+  # "10x_aggr"   -> CellRanger aggr: single combined MTX, barcode suffix -N = sample N
+  # "10x_prefix" -> GEO-style: prefixed triplets (GSMid_Sample_barcodes/features/matrix)
+  #                 in a single RAW directory; data_dir = parent of RAW/
+  # "h5"         -> Single HDF5 file
+  # "rds"        -> RDS file (Seurat object or matrix)
   data_format: "10x"
   # --- Only for h5/rds: filename within data_dir ---
   data_file: ""
@@ -76,9 +79,9 @@ if (params$data_format == "csv") {
 
   sample_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
   # Keep only directories that contain 10x files
-  sample_dirs <- sample_dirs[sapply(sample_dirs, function(d) {
+  sample_dirs <- sample_dirs[vapply(sample_dirs, function(d) {
     file.exists(file.path(d, "matrix.mtx.gz"))
-  })]
+  }, logical(1))]
   cat("10x sample directories found:", length(sample_dirs), "\n")
   cat(paste("-", basename(sample_dirs)), sep = "\n")
 
@@ -102,6 +105,167 @@ if (params$data_format == "csv") {
   if (length(failed_samples) > 0) {
     cat("\nFailed samples:\n")
     cat(paste("-", failed_samples), sep = "\n")
+  }
+
+} else if (params$data_format == "10x_aggr") {
+
+  # CellRanger aggr: single combined MTX with barcode suffixes -1 to -N.
+  # Two modes:
+  #   POST-IMPORT  — if <data_dir>/*_FIXED/*.rds exist, reads per-sample RDS
+  #                  (created by 01_import script) for full exploration.
+  #   PRE-IMPORT   — if no RDS exist yet, reads features + barcodes only.
+  #                  Gene-level checks run; cell-level stats are skipped.
+
+  fixed_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
+  fixed_dirs <- fixed_dirs[grepl("_FIXED$", fixed_dirs)]
+  rds_in_fixed <- if (length(fixed_dirs) > 0)
+    list.files(fixed_dirs[1], pattern = "\\.rds$", full.names = TRUE)
+  else
+    character(0)
+
+  if (length(rds_in_fixed) > 0) {
+
+    cat("Mode: POST-IMPORT — reading per-sample RDS from", basename(fixed_dirs[1]), "\n")
+    cat("Samples found:", length(rds_in_fixed), "\n")
+    cat(paste("-", sub("\\.rds$", "", basename(rds_in_fixed))), sep = "\n")
+    cat("\n")
+
+    counts_list <- list()
+    for (f in rds_in_fixed) {
+      samp <- sub("\\.rds$", "", basename(f))
+      cat("Reading:", samp, "...")
+      counts_list[[samp]] <- readRDS(f)
+      cat(" OK (", ncol(counts_list[[samp]]), "cells )\n")
+    }
+
+  } else {
+
+    cat("Mode: PRE-IMPORT — import script has not run yet.\n")
+    cat("Gene-level checks available; cell-level statistics require the import script.\n\n")
+
+    # ---- Features ----
+    feat_file <- list.files(data_path,
+                            pattern = "features.*\\.tsv(\\.gz)?$",
+                            full.names = TRUE, ignore.case = TRUE)
+    if (length(feat_file) == 0)
+      stop("No features file found in: ", data_path)
+    feat_file <- feat_file[1]
+    cat("Features file:", basename(feat_file), "\n")
+
+    features_df <- read.table(
+      gzfile(feat_file), header = FALSE, sep = "\t",
+      stringsAsFactors = FALSE,
+      col.names = c("ensembl_id", "gene_symbol", "feature_type")
+    )
+    gene_feat_df <- features_df[features_df$feature_type == "Gene Expression", ]
+    cat("Gene Expression features:", nrow(gene_feat_df), "\n\n")
+
+    # ---- Sample count from sample_map (tiny file — always fast) ----
+    smap_file <- list.files(data_path,
+                            pattern = "sample_names.*\\.txt(\\.gz)?$",
+                            full.names = TRUE, ignore.case = TRUE)
+    aggr_n_samples <- NA_integer_
+    if (length(smap_file) > 0) {
+      smap <- read.table(gzfile(smap_file[1]), sep = "\t", header = TRUE,
+                         comment.char = "", check.names = FALSE)
+      aggr_n_samples <- nrow(smap)
+      cat("Sample map:", basename(smap_file[1]), "->", aggr_n_samples, "samples\n")
+      cat(paste(" ", smap[[1]]), sep = "\n")
+    } else {
+      cat("Sample map file not found — sample count unknown.\n")
+    }
+
+    # Dummy matrix (1 placeholder cell) so downstream gene-level chunks run
+    # unchanged. Cell-level outputs (colSums, histograms) will be trivial.
+    dummy_mat <- Matrix::sparseMatrix(
+      i = integer(0), j = integer(0),
+      dims = c(nrow(gene_feat_df), 1),
+      dimnames = list(gene_feat_df$ensembl_id, "pre_import_placeholder")
+    )
+    counts_list <- list(pre_import = dummy_mat)
+
+    # Flag used by cleanup and summary chunks to correct n_samples / n_cells
+    aggr_preimport <- TRUE
+
+    cat("\nNOTE: The cell plots below (library size, genes/cell) reflect a",
+        "placeholder cell and should be ignored.\n")
+  }
+
+} else if (params$data_format == "10x_prefix") {
+
+  # GEO-style: all samples in a single RAW directory as prefixed file triplets:
+  #   <GSMid>_<SampleName>_barcodes.tsv.gz / _features.tsv.gz / _matrix.mtx.gz
+  # Files are already CellRanger-filtered (real cells only) — read directly.
+  # data_dir = PARENT of the RAW directory.
+  #   DIRECT READ  — reads each prefixed MTX triplet (no import script needed).
+  #   POST-IMPORT  — if <data_dir>/*_FIXED/*.rds exist, reads per-sample RDS instead.
+
+  fixed_dirs <- list.dirs(data_path, recursive = FALSE, full.names = TRUE)
+  fixed_dirs <- fixed_dirs[grepl("_FIXED$", fixed_dirs)]
+  rds_in_fixed <- if (length(fixed_dirs) > 0)
+    list.files(fixed_dirs[1], pattern = "\\.rds$", full.names = TRUE)
+  else
+    character(0)
+
+  if (length(rds_in_fixed) > 0) {
+
+    cat("Mode: POST-IMPORT — reading per-sample RDS from", basename(fixed_dirs[1]), "\n")
+    cat("Samples found:", length(rds_in_fixed), "\n")
+    cat(paste("-", sub("\\.rds$", "", basename(rds_in_fixed))), sep = "\n")
+    cat("\n")
+
+    counts_list <- list()
+    for (f in rds_in_fixed) {
+      samp <- sub("\\.rds$", "", basename(f))
+      cat("Reading:", samp, "...")
+      counts_list[[samp]] <- readRDS(f)
+      cat(" OK (", ncol(counts_list[[samp]]), "cells )\n")
+    }
+
+  } else {
+
+    matrix_files <- list.files(data_path,
+                               pattern = "matrix\\.mtx(\\.gz)?$",
+                               recursive = TRUE, full.names = TRUE,
+                               ignore.case = TRUE)
+    if (length(matrix_files) == 0)
+      stop("No matrix.mtx files found under: ", data_path)
+
+    cat(length(matrix_files), "samples found:\n")
+    counts_list <- list()
+
+    for (mat_f in matrix_files) {
+      samp   <- sub("^.+[/\\\\](.+)_matrix\\.mtx(\\.gz)?$", "\\1", mat_f,
+                    ignore.case = TRUE)
+      dir_f  <- dirname(mat_f)
+      prefix <- sub("_matrix\\.mtx(\\.gz)?$", "", basename(mat_f), ignore.case = TRUE)
+      bc_f   <- file.path(dir_f, paste0(prefix, "_barcodes.tsv.gz"))
+      feat_f <- file.path(dir_f, paste0(prefix, "_features.tsv.gz"))
+
+      cat("Reading:", samp, "...")
+
+      barcodes <- read.table(gzfile(bc_f), header = FALSE,
+                             stringsAsFactors = FALSE)[, 1]
+      features <- read.table(gzfile(feat_f), header = FALSE, sep = "\t",
+                             stringsAsFactors = FALSE)
+      # Support 2-col (Ensembl + symbol) and 3-col (+ feature_type) features files
+      if (ncol(features) >= 3) {
+        colnames(features)[1:3] <- c("ensembl_id", "gene_symbol", "feature_type")
+        gene_rows <- which(features$feature_type == "Gene Expression")
+      } else {
+        colnames(features)[1:2] <- c("ensembl_id", "gene_symbol")
+        gene_rows <- seq_len(nrow(features))
+      }
+
+      mat <- Matrix::readMM(gzfile(mat_f))  # rows = features, cols = barcodes
+      mat <- mat[gene_rows, , drop = FALSE]
+      rownames(mat) <- features$ensembl_id[gene_rows]
+      colnames(mat) <- barcodes
+
+      counts_list[[samp]] <- mat
+      cat(" OK (", ncol(mat), "cells )\n")
+      rm(mat); gc()
+    }
   }
 
 } else if (params$data_format == "h5") {
@@ -145,7 +309,7 @@ if (params$data_format == "csv") {
 
 } else {
   stop("Unknown data_format: ", params$data_format,
-       ". Use 'csv', '10x', 'h5', or 'rds'.")
+       ". Use 'csv', '10x', '10x_aggr', '10x_prefix', 'h5', or 'rds'.")
 }
 
 cat("\nSamples loaded:", length(counts_list), "\n")
@@ -489,6 +653,12 @@ n_genes      <- nrow(first_counts)
 n_cells      <- sum(sapply(counts_list, ncol))
 n_samples    <- if (!is.null(sample_counts)) length(sample_counts) else length(counts_list)
 
+# 10x_aggr pre-import: override cell/sample counts that are placeholder-based
+if (exists("aggr_preimport") && isTRUE(aggr_preimport)) {
+  n_samples <- if (exists("aggr_n_samples") && !is.na(aggr_n_samples)) aggr_n_samples else "Unknown"
+  n_cells   <- "Unknown (run import script)"
+}
+
 meta_available <- if (!is.null(meta)) {
   key_fields <- colnames(meta)[tolower(colnames(meta)) %in%
     c("celltype", "cell_type", "cell.type", "annotation", "cluster", "seurat_clusters")]
@@ -539,6 +709,12 @@ summary_info <- data.frame(
 )
 
 knitr::kable(summary_info, caption = paste("Dataset summary -", params$dataset_id))
+
+if (exists("aggr_preimport") && isTRUE(aggr_preimport)) {
+  cat("\nNOTE: Partial summary (pre-import). Run the import script and execute",
+      "this notebook again to obtain complete per-cell statistics",
+      "(library size, genes/cell, cell count per sample)\n")
+}
 ```
 
 ---

@@ -4,7 +4,7 @@ author: "Juliana Pinto"
 format: html
 editor: visual
 params:
-  dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
+  dataset_id: "GSE308231"   # ← EDIT THIS LINE before running in RStudio
 ---
 
 ```{=html}
@@ -358,11 +358,8 @@ for (s in names(seu_list)) {
 
 Notes on sample quality and decisions (fill in while inspecting the plots above):
 
--   **Samples to exclude (biological):** *(e.g. metastases, non-primary tumor)*
--   **Samples to exclude (quality):** *(e.g. high MT%, low cell count)*
--   **Threshold adjustments needed:** *(based on distribution observations)*
-    -   `qc_min_features`:
-    -   `qc_max_features`:
-    -   `qc_min_counts`:
-    -   `qc_max_percent_mt`:
--   **Doublet removal strategy:**
+-   **Samples to exclude (biological):** metastatic samples were excluded at loading
+
+-   **Samples to exclude (quality):** *(none*
+
+-   **Threshold adjustments needed:** *none*

@@ -7,6 +7,7 @@ params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
+```{=html}
 <!--
 ================================================================================
 HOW TO USE THIS NOTEBOOK
@@ -21,15 +22,15 @@ HOW TO USE THIS NOTEBOOK
 
  3. Edit the YAML header above:
       params:
-        dataset_id: "GSE246662"   # your dataset
+        dataset_id: "GSE163558"   # your dataset
 
  4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
     with the green "Render" button in RStudio.
 
  Alternative: render from the terminal without editing the YAML:
       quarto render 00_norm_template.qmd \
-        -P dataset_id:GSE246662 \
-        --output norm_exploration_GSE246662.html
+        -P dataset_id:GSE163558 \
+        --output norm_exploration_GSE163558.html
 
  This notebook expects that scripts 05_merge.R and 06_normalize_hvg.R
  have already been run for the chosen dataset. It reads:
@@ -37,6 +38,7 @@ HOW TO USE THIS NOTEBOOK
    - norm_seurat_path   (post-normalization + HVG)
 ================================================================================
 -->
+```
 
 # Normalization & HVG: `r params$dataset_id`
 
@@ -216,9 +218,7 @@ ggplot(hvg_info, aes(x = mean, y = variance, color = is_hvg)) +
 
 ## 5. Expression of top HVGs across samples
 
-RC normalization produces CPM-scale values (no log). `scale_y_sqrt()` is used
-to make the distribution readable — `sqrt(0) = 0`, so zero-expressed cells are
-handled correctly without a pseudocount.
+RC normalization produces CPM-scale values (no log). `scale_y_sqrt()` is used to make the distribution readable — `sqrt(0) = 0`, so zero-expressed cells are handled correctly without a pseudocount.
 
 ```{r hvg-violin, fig.width=12, fig.height=8}
 top6 <- head(VariableFeatures(seu_norm), 6)

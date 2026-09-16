@@ -69,7 +69,7 @@ Public gastric cancer scRNA-seq datasets from GEO. The final set of datasets inc
 | [GSE163558] | ✅ Done |
 | [GSE275648] | ✅ Done |
 | [GSE201347] | 🔬 In progress |
-
+  
 ---
 
 ## Dataset-Specific Adaptations
@@ -99,7 +99,7 @@ However, public datasets differ substantially in how they are deposited on GEO, 
    ```
    This issue is specific to datasets deposited as Seurat objects. Datasets deposited as raw matrices (10x MTX, CSV, H5) are not affected.
 
-**Sample exclusion:** GC05 (`GSM8481911`) excluded at config level (`samples_to_exclude_qc`) — 62% MT removal and lowest quality metrics of the dataset.
+
 
 ---
 
@@ -126,6 +126,7 @@ Rscript chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pip
 | 00 | `00_utils_general.R` | Shared utility functions | — |
 | 00 | `00_download_annotation_ensembl109.R` | Download Ensembl 109 mapping (run once) | — |
 | 00 | `00_downloadannotation_org_hs_eg_db.R` | Download org.Hs.eg.db mapping (run once) | — |
+| —  | *(before 01)* | Inspect raw GEO files — gene IDs, MT genes, sample structure | ✋ **Datasets notebook** |
 | 01 | `01_import/01_import_<DATASET>.R` | Dataset-specific import → sparse matrix RDS | — |
 | 02 | `02_create_seurat_object.R` | Build Seurat object with metadata | — |
 | 03 | `03_qc_metrics.R` | Compute %mt, %ribo, %hb; run scDblFinder | ✋ QC notebook |
@@ -192,7 +193,29 @@ quarto render chapter_2_sc_deconv_benchmarking/01_sc_matrix/notebooks/qc_explora
   -P dataset_id:GSE163558
 ```
 
-Available notebooks: `qc_exploration`, `normalization`, `clustering`, `rogue`, `annotation`, `datasets`.
+Available notebooks and their pipeline checkpoints:
+
+| Notebook | Directory | Trigger | Parameters |
+|----------|-----------|---------|------------|
+| `datasets` | `notebooks/datasets/` | Before pipeline — explore raw GEO files | `dataset_id`, `data_dir`, `data_format`, `data_file` |
+| `qc_exploration` | `notebooks/qc_exploration/` | After script 03 | `dataset_id` |
+| `normalization` | `notebooks/normalization/` | After script 06 | `dataset_id` |
+| `clustering` | `notebooks/clustering/` | After scripts 07a + 07b | `dataset_id` |
+| `rogue` | `notebooks/rogue/` | After script 08 | `dataset_id` |
+| `annotation` | `notebooks/annotation/` | After scripts 09a + 09b + 09c | `dataset_id` |
+
+**`data_format` options and notebook behaviour:**
+
+| `data_format` | GEO file structure | Notebook strategy |
+|---------------|--------------------|-------------------|
+| `csv` | One CSV per sample | Reads all samples — full exploration |
+| `10x` | Per-sample directories (`barcodes` / `features` / `matrix`) | Reads all samples — full exploration |
+| `10x_prefix` | Single RAW directory, prefixed triplets (`GSMid_Sample_*.tsv.gz`) — CellRanger filtered output | Reads all samples directly — full exploration |
+| `h5` | Single HDF5 file | Reads file — full exploration |
+| `rds` | Seurat object or sparse matrix | Reads file — full exploration |
+| `10x_aggr` | Single combined MTX (raw/unfiltered, all samples merged — can exceed 1 GB) | Pre-import: gene-level checks only (dummy matrix); full exploration after import script |
+
+> For `10x_prefix`, set `data_dir` to the **parent** of the RAW directory (e.g. `data/sc_reference/raw/GSE308231/`). After the import script runs, the notebook automatically switches to post-import mode reading from `*_FIXED/`.
 
 ---
 
@@ -306,7 +329,7 @@ Install from <https://quarto.org/docs/get-started/> (version ≥ 1.4).
 - [x] Setup scripts (`install_r_deps.R`, `environment.yml`)
 - [x] Full pipeline implemented (scripts 01–09)
 - [x] Pilot dataset GSE163558 preprocessed end-to-end
-- [ ] Remaining datasets preprocessed (GSE246662, GSE264203, GSE291080, GSE201347)
+- [ ] Remaining datasets preprocessed 
 - [ ] Multi-dataset integration
 - [ ] Reference matrix finalized
 - [ ] Deconvolution tool benchmarking
