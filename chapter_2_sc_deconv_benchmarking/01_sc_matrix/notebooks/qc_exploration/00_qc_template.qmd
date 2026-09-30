@@ -1,7 +1,9 @@
 ---
 title: "QC Exploration"
 author: "Juliana Pinto"
-format: html
+html:
+    embed-resources: true
+    toc: true
 editor: visual
 params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
