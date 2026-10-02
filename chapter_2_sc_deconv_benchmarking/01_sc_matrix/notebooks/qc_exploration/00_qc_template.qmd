@@ -1,15 +1,14 @@
 ---
 title: "QC Exploration"
 author: "Juliana Pinto"
-html:
+format:
+  html:
     embed-resources: true
-    toc: true
 editor: visual
 params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{=html}
 <!--
 ================================================================================
 HOW TO USE THIS NOTEBOOK
@@ -24,22 +23,21 @@ HOW TO USE THIS NOTEBOOK
 
  3. Edit the YAML header above:
       params:
-        dataset_id: "GSE163558"   # your dataset
+        dataset_id: "GSE246662"   # your dataset
 
  4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
     with the green "Render" button in RStudio.
 
  Alternative: render from the terminal without editing the YAML:
       quarto render 00_qc_template.qmd \
-        -P dataset_id:GSE163558 \
-        --output QC_exploration_GSE163558.html
+        -P dataset_id:GSE246662 \
+        --output QC_exploration_GSE246662.html
 
  This notebook expects that script 03_qc_metrics.R has already been run
  for the chosen dataset. It only reads the per-sample RDS files written
  by that script.
 ================================================================================
 -->
-```
 
 # QC Exploration: `r params$dataset_id`
 

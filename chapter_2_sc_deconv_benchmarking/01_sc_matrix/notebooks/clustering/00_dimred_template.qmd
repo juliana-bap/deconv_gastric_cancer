@@ -1,13 +1,14 @@
 ---
 title: "Dimensionality Reduction Exploration"
 author: "Juliana Pinto"
-format: html
+format:
+  html:
+    embed-resources: true
 editor: visual
 params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{=html}
 <!--
 ================================================================================
 HOW TO USE THIS NOTEBOOK
@@ -22,15 +23,15 @@ HOW TO USE THIS NOTEBOOK
 
  3. Edit the YAML header above:
       params:
-        dataset_id: "GSE163558"   # your dataset
+        dataset_id: "GSE246662"   # your dataset
 
  4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
     with the green "Render" button in RStudio.
 
  Alternative: render from the terminal without editing the YAML:
       quarto render 00_dimred_template.qmd \
-        -P dataset_id:GSE163558 \
-        --output dimred_exploration_GSE163558.html
+        -P dataset_id:GSE246662 \
+        --output dimred_exploration_GSE246662.html
 
  This notebook expects that script 07a_dimred.R has already been run for
  the chosen dataset. It reads pca_seurat_path and uses dims_to_use/n_pcs
@@ -38,7 +39,6 @@ HOW TO USE THIS NOTEBOOK
  and only re-run 07b_clustering.R (PCA does not need to be recomputed).
 ================================================================================
 -->
-```
 
 # Dimensionality Reduction: `r params$dataset_id`
 
@@ -163,6 +163,40 @@ for (pc in 1:4) {
 }
 
 wrap_plots(plots_pca, ncol = 2)
+```
+
+```{r pca-loadings-table}
+# Top loading genes per PC with mapping status — identify unmapped Ensembl IDs
+n_pcs_check <- min(ncol(seu[["pca"]]@feature.loadings), 10)
+n_top       <- 5
+
+sym_meta <- setNames(seu[["RNA"]]@meta.data$gene_symbol, rownames(seu))
+
+rows <- list()
+for (pc in seq_len(n_pcs_check)) {
+  loadings <- seu[["pca"]]@feature.loadings[, pc]
+  top_genes <- c(
+    names(sort(loadings, decreasing = TRUE))[seq_len(n_top)],
+    names(sort(loadings, decreasing = FALSE))[seq_len(n_top)]
+  )
+  for (ens in top_genes) {
+    sym    <- sym_meta[[ens]]
+    mapped <- !is.na(sym) && nzchar(sym)
+    rows[[length(rows) + 1]] <- data.frame(
+      PC          = paste0("PC", pc),
+      ensembl_id  = ens,
+      gene_symbol = ifelse(mapped, sym, ens),
+      mapped      = ifelse(mapped, "yes", "no"),
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+df_pc_genes <- do.call(rbind, rows)
+df_pc_genes <- df_pc_genes[!duplicated(df_pc_genes$ensembl_id), ]
+
+knitr::kable(df_pc_genes, row.names = FALSE,
+             caption = "Top loading genes per PC (mapped = no → add to 05_merge.R supplement)")
 ```
 
 ## 3. Variance explained per PC

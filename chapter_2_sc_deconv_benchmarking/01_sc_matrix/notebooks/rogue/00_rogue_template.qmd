@@ -1,13 +1,14 @@
 ---
 title: "ROGUE Cluster Purity Exploration"
 author: "Juliana Pinto"
-format: html
+format:
+  html:
+    embed-resources: true
 editor: visual
 params:
   dataset_id: "GSExxxxxx"   # ← EDIT THIS LINE before running in RStudio
 ---
 
-```{=html}
 <!--
 ================================================================================
 HOW TO USE THIS NOTEBOOK
@@ -22,15 +23,15 @@ HOW TO USE THIS NOTEBOOK
 
  3. Edit the YAML header above:
       params:
-        dataset_id: "GSE163558"   # your dataset
+        dataset_id: "GSE246662"   # your dataset
 
  4. Run cell-by-cell (Ctrl/Cmd+Enter) or render the whole notebook
     with the green "Render" button in RStudio.
 
  Alternative: render from the terminal without editing the YAML:
       quarto render 00_rogue_template.qmd \
-        -P dataset_id:GSE163558 \
-        --output rogue_exploration_GSE163558.html
+        -P dataset_id:GSE246662 \
+        --output rogue_exploration_GSE246662.html
 
  The resolution to inspect is taken directly from `rogue_resolution`
  in config_<DATASET>.R — no need to edit it here. Change it in the
@@ -42,11 +43,10 @@ HOW TO USE THIS NOTEBOOK
    - <rogue_output_dir>/<DATASET>_rogue_scores_res<rogue_resolution>.csv
 ================================================================================
 -->
-```
 
 # ROGUE: `r params$dataset_id`
 
-Inspects the output of `08_rogue.R`. ROGUE measures cluster purity (1 = pure, \< 0.5 = mixed). Used to detect clusters that may need re-clustering or that are biologically heterogeneous.
+Inspects the output of `08_rogue.R`. ROGUE measures cluster purity (1 = pure, < 0.5 = mixed). Used to detect clusters that may need re-clustering or that are biologically heterogeneous.
 
 ## Setup
 
