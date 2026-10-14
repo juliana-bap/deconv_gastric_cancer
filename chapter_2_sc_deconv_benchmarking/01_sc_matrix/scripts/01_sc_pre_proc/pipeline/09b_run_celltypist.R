@@ -53,8 +53,14 @@ cat("  output_dir:", annotation_output_dir, "\n")
 cat("  dataset_id:", dataset_id, "\n")
 cat("=============================\n\n")
 
+# Resolve Python: prefer RETICULATE_PYTHON (set in ~/.Renviron for conda envs),
+# fall back to python3 on PATH.
+python_bin <- Sys.getenv("RETICULATE_PYTHON", unset = "python3")
+if (!nzchar(python_bin)) python_bin <- "python3"
+
 cmd <- sprintf(
-  'python3 "%s" "%s" "%s" "%s"',
+  '"%s" "%s" "%s" "%s" "%s"',
+  python_bin,
   python_script,
   h5ad_path,
   annotation_output_dir,

@@ -131,7 +131,21 @@ ig_supplement <- c(
   "ENSG00000239951" = "JCHAIN",  "ENSG00000275385" = "IGHGP",
   "ENSG00000211677" = "IGLC2",   "ENSG00000211679" = "IGLC3",
   "ENSG00000211662" = "IGLV3-21","ENSG00000211598" = "IGKV4-1",
-  "ENSG00000254709" = "IGLL5"
+  "ENSG00000254709" = "IGLL5",
+  # Gastric markers absent from Ensembl 109 hgnc_symbol field
+  "ENSG00000100604" = "CHGA",
+  "ENSG00000184956" = "MUC6",
+  # MHC class II genes absent from Ensembl 109 hgnc_symbol field
+  "ENSG00000204287" = "HLA-DRA",
+  "ENSG00000223865" = "HLA-DPB1",
+  "ENSG00000231389" = "HLA-DPA1",
+  "ENSG00000179344" = "HLA-DQB1",
+  # Additional genes absent from Ensembl 109 hgnc_symbol field
+  "ENSG00000151276" = "MAGI1",
+  "ENSG00000159403" = "C1R",
+  "ENSG00000164733" = "CTSB",
+  "ENSG00000168631" = "MUCL3",
+  "ENSG00000165949" = "IFI27"
 )
 
 # Only add if not already in mapping
