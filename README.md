@@ -171,6 +171,41 @@ Rscript $PIPELINE/09b_run_celltypist.R            $CONFIG
 Rscript $PIPELINE/09c_import_celltypist.R         $CONFIG
 ```
 
+### Server session variables (recommended)
+
+Before running any script or rendering notebooks on the server, export these variables in your terminal session to avoid repeating long paths in every command.
+
+```bash
+# Dataset being processed
+dataset=GSE249874
+
+# Repository paths
+config=/data/juliana/deconv_gastric_cancer/chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/configs/config_${dataset}.R
+pipeline=/data/juliana/deconv_gastric_cancer/chapter_2_sc_deconv_benchmarking/01_sc_matrix/scripts/01_sc_pre_proc/pipeline
+notebooks=/data/juliana/deconv_gastric_cancer/chapter_2_sc_deconv_benchmarking/01_sc_matrix/notebooks
+
+# Quarto binary — adjust to your installation
+# If Quarto is on PATH:          quarto=$(which quarto)
+# If installed manually:         quarto=~/quarto-<version>/bin/quarto
+quarto=~/quarto-1.6.39/bin/quarto
+```
+
+> **Finding the Quarto path:** run `which quarto` first. If not found, check `ls ~/quarto-*/bin/quarto` for a manual installation. These variables last only for the current terminal session — redefine them after reconnecting via SSH.
+
+With these variables, commands become:
+
+```bash
+# Run a pipeline script
+Rscript $pipeline/02_create_seurat_object.R $config
+
+# Render a notebook
+$quarto render $notebooks/qc_exploration/QC_exploration_${dataset}.qmd \
+  -P dataset_id:${dataset} \
+  --output QC_exploration_${dataset}.html
+```
+
+---
+
 ### Adding a new dataset
 
 1. Copy the config template and fill in the dataset-specific fields:
