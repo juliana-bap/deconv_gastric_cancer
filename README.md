@@ -68,8 +68,9 @@ Public gastric cancer scRNA-seq datasets from GEO. The final set of datasets inc
 |--------|--------|
 | [GSE163558] | ✅ Done |
 | [GSE275648] | ✅ Done |
-| [GSE201347] | 🔬 In progress |
-  
+| [GSE201347] | ✅ Done  |
+| [GSE308231] | ✅ Done  |
+| [GSE249874] | ✅ Done  |  
 ---
 
 ## Dataset-Specific Adaptations
