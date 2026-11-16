@@ -13,7 +13,7 @@ The project is organized in three chapters, each corresponding to a publication:
 | Chapter | Goal | Status |
 |---------|------|--------|
 | `chapter_1_review/` | Review of the immune landscape of gastric cancer | ✍️ Writing |
-| `chapter_2_sc_deconv_benchmarking/` | scRNA-seq reference matrix + deconvolution benchmarking | 🔬 In progress |
+| `chapter_2_sc_deconv_benchmarking/` | scRNA-seq reference matrix + deconvolution benchmarking | 🔬 In progress — preprocessing done, integration underway |
 | `chapter_3_clinical/` | Clinical deconvolution of Amazon patient samples | 🗓️ Planned |
 
 ---
@@ -28,19 +28,24 @@ deconv_gastric_cancer/
 ├── chapter_2_sc_deconv_benchmarking/
 │   ├── 01_sc_matrix/                    # Etapa 1: scRNA-seq preprocessing → reference matrix
 │   │   ├── annotation/                  # Ensembl 109 mapping tables (not versioned)
+│   │   ├── metadata/
+│   │   │   └── sample_sheet.csv         # Clinical metadata for all 5 datasets
 │   │   ├── scripts/
 │   │   │   ├── 01_sc_pre_proc/          # Pipeline scripts 01–09
 │   │   │   │   ├── pipeline/            # Numbered scripts
 │   │   │   │   │   └── 01_import/       # Dataset-specific import scripts
 │   │   │   │   └── configs/             # config_TEMPLATE.R (dataset configs are local only)
-│   │   │   └── 02_sc_integration_matrix/ # Multi-dataset integration (planned)
+│   │   │   └── 02_sc_integration_matrix/ # Multi-dataset integration (scripts 10–16)
+│   │   │       ├── config_integration_TEMPLATE.R
+│   │   │       └── 10_merge_prepare.R   # Merge, batch-aware HVG, PCA baseline
 │   │   └── notebooks/                   # Quarto exploration notebooks
 │   │       ├── datasets/
 │   │       ├── qc_exploration/
 │   │       ├── normalization/
 │   │       ├── clustering/
 │   │       ├── rogue/
-│   │       └── annotation/
+│   │       ├── annotation/
+│   │       └── integration/             # Templates: benchmark, post-integration, cell annotation
 │   └── 02_deconv_benchmarking/          # Etapa 2: tool benchmarking (planned)
 │
 ├── chapter_3_clinical/                  # Clinical application (planned)
@@ -64,13 +69,14 @@ deconv_gastric_cancer/
 
 Public gastric cancer scRNA-seq datasets from GEO. The final set of datasets included in the reference matrix is still being defined — datasets are curated progressively as processing is completed.
 
-| GEO ID | Status |
-|--------|--------|
-| [GSE163558] | ✅ Done |
-| [GSE275648] | ✅ Done |
-| [GSE201347] | ✅ Done  |
-| [GSE308231] | ✅ Done  |
-| [GSE249874] | ✅ Done  |  
+| GEO ID | Condition | Status |
+|--------|-----------|--------|
+| [GSE163558] | Gastric cancer + normal | ✅ Preprocessed |
+| [GSE275648] | Gastric cancer + normal | ✅ Preprocessed |
+| [GSE308231] | Gastric cancer + normal | ✅ Preprocessed |
+| [GSE201347] | Gastric cancer + normal | ✅ Preprocessed |
+| [GSE249874] | Gastric cancer + intestinal metaplasia + normal | ✅ Preprocessed (IM filtered at integration) |
+
 ---
 
 ## Dataset-Specific Adaptations
@@ -361,12 +367,22 @@ Install from <https://quarto.org/docs/get-started/> (version ≥ 1.4).
 
 ## Project Status
 
+**Preprocessing**
 - [x] Repository structure defined
 - [x] Setup scripts (`install_r_deps.R`, `environment.yml`)
 - [x] Full pipeline implemented (scripts 01–09)
-- [x] Pilot dataset GSE163558 preprocessed end-to-end
-- [ ] Remaining datasets preprocessed 
-- [ ] Multi-dataset integration
+- [x] All 5 datasets preprocessed and annotated (GSE163558, GSE275648, GSE308231, GSE201347, GSE249874)
+
+**Integration**
+- [x] Sample sheet with clinical metadata for all datasets
+- [x] Script 10 — merge, batch-aware HVG selection, PCA baseline
+- [ ] Script 11 — integration benchmark (scib-metrics: Unintegrated, Harmony, Scanorama, scVI)
+- [ ] Script 12 — final integration (chosen method)
+- [ ] Script 14 — inferCNV (malignant vs normal epithelium)
+- [ ] Script 15 — cell type annotation
+- [ ] Script 16 — reference matrix export (train/test split by patient)
+
+**Deconvolution**
 - [ ] Reference matrix finalized
 - [ ] Deconvolution tool benchmarking
 - [ ] Deconvolution applied to clinical bulk RNA-seq
