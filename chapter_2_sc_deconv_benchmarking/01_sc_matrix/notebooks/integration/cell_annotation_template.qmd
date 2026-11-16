@@ -1,0 +1,183 @@
+---
+title: "Cell Annotation — Integrated Atlas"
+author: "Juliana Pinto"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
+
+ 1. Copy this template:
+      cp cell_annotation_template.qmd cell_annotation.qmd
+
+ 2. Open in RStudio via deconv_gastric_cancer.Rproj.
+
+ 3. Run after post_integration.qmd — specifically after:
+      - Harmonised labels are defined (cell_type_harmonised column)
+      - inferCNV has run (script 14) to distinguish malignant from normal epithelium
+    Reads: annotated_integrated_path (from config_integration.R)
+
+ 4. Use this notebook to:
+      - Review final curated cell type labels
+      - Validate with known markers
+      - Document annotation decisions
+      - Inspect cell type composition per dataset / condition
+      - Prepare for reference matrix export (script 16)
+================================================================================
+-->
+
+# Cell Annotation — Integrated Atlas
+
+## Setup
+
+```{r libs, message=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(tidyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- here::here(
+  "chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+  "scripts", "02_sc_integration_matrix", "config_integration.R"
+)
+source(config_path)
+```
+
+```{r helper-ens-to-symbol}
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    sym <- setNames(seu[["RNA"]]@meta.data$gene_symbol, rownames(seu))
+    out <- sym[ensembl_ids]
+    out[is.na(out) | out == ""] <- ensembl_ids[is.na(out) | out == ""]
+    return(unname(out))
+  }
+  return(ensembl_ids)
+}
+```
+
+## 1. Load annotated object
+
+```{r load-object}
+seu <- readRDS(annotated_integrated_path)
+
+cat("Dimensions:", nrow(seu), "genes x", ncol(seu), "cells\n")
+cat("Datasets:", paste(unique(seu$dataset_id), collapse = ", "), "\n")
+
+# Confirm final annotation column is present
+if (!"cell_type_final" %in% colnames(seu@meta.data)) {
+  stop("'cell_type_final' column not found. Run post_integration.qmd first.")
+}
+
+cat("Cell types:", paste(sort(unique(seu$cell_type_final)), collapse = ", "), "\n")
+```
+
+## 2. Final UMAP
+
+```{r umap-final}
+p1 <- DimPlot(seu, group.by = "cell_type_final", label = TRUE, repel = TRUE,
+              pt.size = 0.3, label.size = 3) +
+        ggtitle("Final annotation") + NoLegend()
+
+p2 <- DimPlot(seu, group.by = "dataset_id", pt.size = 0.3) +
+        ggtitle("By dataset")
+
+p1 | p2
+```
+
+## 3. Cell type composition
+
+```{r composition-table}
+composition <- seu@meta.data |>
+  group_by(dataset_id, disease_group, cell_type_final) |>
+  summarise(n_cells = n(), .groups = "drop") |>
+  group_by(dataset_id) |>
+  mutate(pct = n_cells / sum(n_cells) * 100) |>
+  arrange(dataset_id, desc(n_cells))
+
+composition
+```
+
+```{r composition-barplot}
+ggplot(composition,
+       aes(x = dataset_id, y = pct, fill = cell_type_final)) +
+  geom_col() +
+  labs(title = "Cell type composition per dataset",
+       x = NULL, y = "% cells", fill = "Cell type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r composition-by-condition}
+seu@meta.data |>
+  group_by(condition, cell_type_final) |>
+  summarise(n = n(), .groups = "drop") |>
+  group_by(condition) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ggplot(aes(x = condition, y = pct, fill = cell_type_final)) +
+  geom_col() +
+  labs(title = "Cell type composition: tumor vs normal",
+       x = NULL, y = "% cells", fill = "Cell type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## 4. Marker validation
+
+```{r top-markers-per-type}
+markers_path <- file.path(dirname(integrated_seurat_path), "cluster_markers.csv")
+markers <- read.csv(markers_path)
+
+markers |>
+  group_by(cluster) |>
+  slice_max(avg_log2FC, n = 3) |>
+  select(cluster, gene, avg_log2FC, p_val_adj)
+```
+
+```{r dotplot-final}
+Idents(seu) <- "cell_type_final"
+
+top_markers <- markers |>
+  group_by(cluster) |>
+  slice_max(avg_log2FC, n = 2) |>
+  pull(gene) |>
+  unique()
+
+DotPlot(seu, features = ens_to_label(top_markers, seu)) + RotatedAxis()
+```
+
+## 5. Malignant vs normal epithelium (inferCNV)
+
+```{r infercnv-check}
+# inferCNV results (script 14) should have added a 'malignant' or
+# 'cnv_score' column. Adjust column name as needed.
+if ("is_malignant" %in% colnames(seu@meta.data)) {
+  seu@meta.data |>
+    filter(grepl("Epithelial|Tumor", cell_type_final, ignore.case = TRUE)) |>
+    group_by(cell_type_final, is_malignant) |>
+    summarise(n = n(), .groups = "drop")
+}
+```
+
+## 6. Annotation decisions log
+
+<!-- Document manual decisions made during annotation -->
+
+| Cluster | Assigned label | Key markers | Notes |
+|---------|---------------|-------------|-------|
+| 0 | | | |
+| 1 | | | |
+
+## 7. Save annotated object
+
+```{r save}
+# After finalising cell_type_final column, save for script 16
+# saveRDS(seu, annotated_integrated_path)
+# cat("Saved:", annotated_integrated_path, "\n")
+```

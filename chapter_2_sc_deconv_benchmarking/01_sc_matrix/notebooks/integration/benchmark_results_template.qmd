@@ -1,0 +1,145 @@
+---
+title: "Integration Benchmark Results"
+author: "Juliana Pinto"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
+
+ 1. Copy this template:
+      cp benchmark_results_template.qmd benchmark_results.qmd
+    (the copy is gitignored by the **/*_GSE*.qmd rule — use a plain name).
+
+ 2. Open in RStudio via deconv_gastric_cancer.Rproj (so here::here() resolves).
+
+ 3. Run after script 11_integration_benchmark.py has completed.
+    Expected outputs in data/sc_reference/processed/integrated/benchmark/:
+      - scib_scores.csv     (per-method aggregate scores)
+      - scib_metrics.csv    (all 14 metrics per method)
+      - umap_<method>.png   (UMAP per method, coloured by dataset + cell type)
+
+ 4. Use this notebook to:
+      - Compare methods on batch removal + bio conservation metrics
+      - Visualise UMAPs side by side
+      - Choose the final integration method for script 12
+================================================================================
+-->
+
+# Integration Benchmark
+
+Comparison of integration methods using the scib-metrics framework
+(Luecken et al. 2022, *Nature Methods*). Methods evaluated: Unintegrated,
+Harmony, Scanorama, scVI.
+
+Scoring weights: **40% batch removal + 60% bio conservation**.
+
+## Setup
+
+```{r libs, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(patchwork)
+library(pheatmap)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- here::here(
+  "chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+  "scripts", "02_sc_integration_matrix", "config_integration.R"
+)
+source(config_path)
+```
+
+## 1. Aggregate scores
+
+```{r aggregate-scores}
+# overall = 0.4 * batch_removal + 0.6 * bio_conservation
+scores_path <- file.path(benchmark_output_dir, "scib_scores.csv")
+scores <- read.csv(scores_path)
+scores
+```
+
+```{r plot-aggregate}
+scores |>
+  pivot_longer(-method, names_to = "component", values_to = "score") |>
+  mutate(component = factor(component,
+                            levels = c("overall", "batch_removal", "bio_conservation"))) |>
+  ggplot(aes(x = reorder(method, score), y = score, fill = component)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(title = "Overall integration scores",
+       x = NULL, y = "Score (0-1)", fill = NULL) +
+  scale_fill_manual(values = c(
+    overall          = "#2C6E91",
+    batch_removal    = "#E07B39",
+    bio_conservation = "#4CAF50"
+  ))
+```
+
+## 2. Per-metric breakdown
+
+```{r per-metric}
+metrics_path <- file.path(benchmark_output_dir, "scib_metrics.csv")
+metrics <- read.csv(metrics_path)
+metrics
+```
+
+```{r heatmap-metrics}
+metrics_mat <- metrics |>
+  column_to_rownames("method") |>
+  as.matrix()
+
+pheatmap(
+  metrics_mat,
+  cluster_rows  = TRUE,
+  cluster_cols  = FALSE,
+  display_numbers = TRUE,
+  number_format = "%.2f",
+  main  = "scib metrics per method",
+  color = colorRampPalette(c("#F7F7F7", "#2C6E91"))(50)
+)
+```
+
+## 3. UMAPs
+
+```{r show-umaps, results='asis'}
+umap_files <- list.files(benchmark_output_dir, pattern = "^umap_.*\\.png$",
+                         full.names = TRUE)
+cat("UMAP files found:", length(umap_files), "\n")
+
+for (f in umap_files) {
+  method_name <- gsub("umap_|\\.png", "", basename(f))
+  cat(sprintf("\n### %s\n\n", method_name))
+  cat(sprintf("![](%s)\n\n", f))
+}
+```
+
+## 4. Decision
+
+<!-- Fill in after reviewing metrics and UMAPs -->
+
+**Method chosen:** _______
+
+**Justification:**
+
+- Overall score:
+- Batch removal (iLISI, kBET, graph connectivity):
+- Bio conservation (NMI, ARI, cLISI):
+- Visual inspection (batch mixing vs cell type separation):
+
+**Parameters to confirm in `config_integration.R` before running script 12:**
+
+```
+harmony_theta    =
+harmony_lambda   =
+dims_integration = 1:
+```

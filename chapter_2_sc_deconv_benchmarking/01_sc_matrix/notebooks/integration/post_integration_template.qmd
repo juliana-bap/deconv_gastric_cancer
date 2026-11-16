@@ -1,0 +1,215 @@
+---
+title: "Post-Integration Exploration"
+author: "Juliana Pinto"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+<!--
+================================================================================
+HOW TO USE THIS NOTEBOOK
+
+ 1. Copy this template:
+      cp post_integration_template.qmd post_integration.qmd
+
+ 2. Open in RStudio via deconv_gastric_cancer.Rproj.
+
+ 3. Run after script 12_final_integration.R has completed.
+    Reads: integrated_seurat_path (from config_integration.R)
+
+ 4. Use this notebook to:
+      - Inspect integration quality (batch mixing, cell type structure)
+      - Harmonise pre-annotation labels across datasets
+        (SingleR / CellTypist labels from scripts 09a-09c per dataset)
+      - Identify clusters that need manual curation
+      - Define marker genes per cluster as input for cell_annotation.qmd
+================================================================================
+-->
+
+# Post-Integration Exploration
+
+## Setup
+
+```{r libs, message=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+theme_set(theme_classic())
+```
+
+```{r load-config}
+config_path <- here::here(
+  "chapter_2_sc_deconv_benchmarking", "01_sc_matrix",
+  "scripts", "02_sc_integration_matrix", "config_integration.R"
+)
+source(config_path)
+```
+
+```{r helper-ens-to-symbol}
+ens_to_label <- function(ensembl_ids, seu) {
+  if ("gene_symbol" %in% colnames(seu[["RNA"]]@meta.data)) {
+    sym <- setNames(seu[["RNA"]]@meta.data$gene_symbol, rownames(seu))
+    out <- sym[ensembl_ids]
+    out[is.na(out) | out == ""] <- ensembl_ids[is.na(out) | out == ""]
+    return(unname(out))
+  }
+  return(ensembl_ids)
+}
+```
+
+## 1. Load integrated object
+
+```{r load-object}
+seu <- readRDS(integrated_seurat_path)
+
+cat("Dimensions:", nrow(seu), "genes x", ncol(seu), "cells\n")
+cat("Datasets:", paste(unique(seu$dataset_id), collapse = ", "), "\n")
+cat("Disease groups:", paste(unique(seu$disease_group), collapse = ", "), "\n")
+cat("Reductions available:", paste(names(seu@reductions), collapse = ", "), "\n")
+cat("Metadata columns:", paste(colnames(seu@meta.data), collapse = ", "), "\n")
+```
+
+## 2. Integration quality — batch mixing
+
+```{r umap-batch}
+p1 <- DimPlot(seu, group.by = "dataset_id",    pt.size = 0.3) + ggtitle("By dataset")
+p2 <- DimPlot(seu, group.by = "disease_group", pt.size = 0.3) + ggtitle("By disease group")
+p3 <- DimPlot(seu, group.by = "condition",     pt.size = 0.3) + ggtitle("By condition")
+
+(p1 | p2) / p3
+```
+
+## 3. Cluster structure
+
+```{r umap-clusters}
+# Adjust resolution name to match what script 12 computed
+DimPlot(seu, group.by = "seurat_clusters", label = TRUE, pt.size = 0.3) +
+  ggtitle("Clusters")
+```
+
+```{r cell-counts-per-cluster}
+table(Cluster = seu$seurat_clusters, Dataset = seu$dataset_id)
+```
+
+## 4. Pre-annotation labels (from per-dataset pipeline)
+
+```{r available-annot-cols}
+annot_cols <- grep("singler|celltypist", colnames(seu@meta.data), value = TRUE)
+cat("Annotation columns available:", paste(annot_cols, collapse = ", "), "\n")
+```
+
+```{r umap-singler}
+if ("singler_hpca_label" %in% colnames(seu@meta.data)) {
+  DimPlot(seu, group.by = "singler_hpca_label", label = TRUE, repel = TRUE,
+          pt.size = 0.2, label.size = 3) +
+    ggtitle("SingleR HPCA") + NoLegend()
+}
+```
+
+```{r umap-celltypist}
+if ("celltypist_majority_voting" %in% colnames(seu@meta.data)) {
+  DimPlot(seu, group.by = "celltypist_majority_voting", label = TRUE, repel = TRUE,
+          pt.size = 0.2, label.size = 3) +
+    ggtitle("CellTypist") + NoLegend()
+}
+```
+
+## 5. Label harmonisation
+
+```{r label-agreement}
+# Agreement between SingleR and CellTypist per cluster
+# Adapt column names as needed
+if (all(c("singler_hpca_label", "celltypist_majority_voting") %in% colnames(seu@meta.data))) {
+  seu@meta.data |>
+    group_by(seurat_clusters, singler_hpca_label, celltypist_majority_voting) |>
+    summarise(n = n(), .groups = "drop") |>
+    arrange(seurat_clusters, desc(n))
+}
+```
+
+```{r assign-harmonised-label}
+# After inspecting the table above, assign a harmonised label per cluster.
+# Edit the mapping below:
+cluster_to_label <- c(
+  "0"  = "TODO",
+  "1"  = "TODO"
+  # add all clusters
+)
+
+seu$cell_type_harmonised <- cluster_to_label[as.character(seu$seurat_clusters)]
+
+DimPlot(seu, group.by = "cell_type_harmonised", label = TRUE, repel = TRUE,
+        pt.size = 0.2, label.size = 3) +
+  ggtitle("Harmonised labels") + NoLegend()
+```
+
+## 6. Marker genes per cluster
+
+```{r find-markers}
+# Computationally expensive — run once and save
+markers_path <- file.path(dirname(integrated_seurat_path), "cluster_markers.csv")
+
+if (!file.exists(markers_path)) {
+  Idents(seu) <- "seurat_clusters"
+  markers <- FindAllMarkers(seu, only.pos = TRUE, min.pct = 0.25,
+                            logfc.threshold = 0.25, verbose = FALSE)
+  write.csv(markers, markers_path, row.names = FALSE)
+} else {
+  markers <- read.csv(markers_path)
+}
+
+markers |>
+  group_by(cluster) |>
+  slice_max(avg_log2FC, n = 5) |>
+  select(cluster, gene, avg_log2FC, pct.1, pct.2, p_val_adj)
+```
+
+```{r dotplot-markers}
+top_markers <- markers |>
+  group_by(cluster) |>
+  slice_max(avg_log2FC, n = 3) |>
+  pull(gene) |>
+  unique()
+
+top_markers_sym <- ens_to_label(top_markers, seu)
+
+DotPlot(seu, features = unique(top_markers_sym), group.by = "seurat_clusters") +
+  RotatedAxis()
+```
+
+## 7. Known gastric cancer markers
+
+```{r known-markers}
+# Key cell-type markers for gastric cancer context
+# (map to Ensembl IDs used as rownames)
+gastric_markers <- list(
+  Epithelial   = c("EPCAM", "CDH1", "KRT8", "KRT18"),
+  Malignant    = c("TP53", "ERBB2", "CDX2", "MUC2"),    # CDX2/MUC2 = IM signature
+  Fibroblast   = c("COL1A1", "COL1A2", "FAP", "ACTA2"),
+  Endothelial  = c("PECAM1", "VWF", "CDH5"),
+  Macrophage   = c("CD68", "CD163", "MRC1"),
+  T_cell       = c("CD3D", "CD3E", "CD8A", "CD4"),
+  B_cell       = c("CD19", "MS4A1", "CD79A"),
+  Plasma       = c("IGHG1", "IGHA1", "MZB1"),
+  NK           = c("GNLY", "NKG7", "KLRD1"),
+  Mast         = c("KIT", "CPA3", "TPSAB1")
+)
+
+for (ct in names(gastric_markers)) {
+  genes <- gastric_markers[[ct]]
+  # Try to find Ensembl IDs for these symbols in the object
+  sym_lookup <- setNames(rownames(seu), seu[["RNA"]]@meta.data$gene_symbol)
+  ens_ids <- sym_lookup[genes]
+  valid  <- ens_ids[!is.na(ens_ids)]
+  if (length(valid) > 0) {
+    p <- FeaturePlot(seu, features = unname(valid), ncol = min(length(valid), 3),
+                     pt.size = 0.1) &
+           theme(legend.position = "right")
+    print(patchwork::wrap_plots(p) + patchwork::plot_annotation(title = ct))
+  }
+}
+```

@@ -55,6 +55,11 @@ __pycache__/
 **/*_GSE*.qmd
 **/GSE*_exploration.qmd
 !**/config_TEMPLATE.R
+**/QC_exploration_*.qmd
+
+# Integration config (filled version — paths are server-specific)
+**/config_integration.R
+!**/config_integration_TEMPLATE.R
 
 # HPC job scripts (cluster-specific, not portable)
 **/pbs/
@@ -63,7 +68,9 @@ __pycache__/
 CLAUDE.md
 docs/ONBOARDING.md
 chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/*
-!chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/00_dataset_report_template.md
+
+
+chapter_2_sc_deconv_benchmarking/01_sc_matrix/reports/00_dataset_report_template.md
 
 # AI agent context files (local-only, not for public repo)
 **/ONBOARDING_CLAUDE.md
